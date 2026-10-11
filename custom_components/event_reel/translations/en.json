@@ -1,0 +1,238 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Event Reel",
+        "description": "Event Reel describes camera events with Home Assistant's AI Task and keeps them for the Event Reel card. Add cameras afterwards with **Add camera**.",
+        "data": {
+          "ai_task_entity": "AI Task",
+          "language": "Language",
+          "retention_days": "Keep events for",
+          "instructions": "Extra instructions",
+          "keep_no_activity": "Keep events where the AI sees nothing"
+        },
+        "data_description": {
+          "ai_task_entity": "Leave empty to use the AI Task set as preferred under Settings → AI Task.",
+          "language": "The language of titles and descriptions, as a code (en, nb, de) or a name.",
+          "instructions": "Added to every request, for example what counts as normal activity at your home.",
+          "keep_no_activity": "Off: a false alarm leaves no event. A doorbell ring is always kept."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Event Reel is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Event Reel",
+        "data": {
+          "ai_task_entity": "AI Task",
+          "language": "Language",
+          "retention_days": "Keep events for",
+          "instructions": "Extra instructions",
+          "keep_no_activity": "Keep events where the AI sees nothing"
+        },
+        "data_description": {
+          "ai_task_entity": "Leave empty to use the AI Task set as preferred under Settings → AI Task.",
+          "language": "The language of titles and descriptions, as a code (en, nb, de) or a name.",
+          "instructions": "Added to every request, for example what counts as normal activity at your home.",
+          "keep_no_activity": "Off: a false alarm leaves no event. A doorbell ring is always kept."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "camera": {
+      "initiate_flow": {
+        "user": "Add camera"
+      },
+      "entry_type": "Camera",
+      "step": {
+        "user": {
+          "title": "Add a camera",
+          "description": "Nest cameras are described from their own event clips. Other cameras are described from snapshots when a trigger turns on.",
+          "data": {
+            "camera": "Camera",
+            "name": "Name",
+            "triggers": "Triggers",
+            "nest_events": "Nest events",
+            "frames": "Frames",
+            "cooldown": "Cooldown",
+            "instructions": "Extra instructions"
+          },
+          "data_description": {
+            "name": "The name the AI is told. Leave empty to use the camera's name.",
+            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. Not needed for Nest cameras.",
+            "nest_events": "For Nest cameras: which events to describe.",
+            "frames": "How many frames the AI sees: taken from the clip, or snapshots one second apart.",
+            "cooldown": "Ignore new triggers from this camera for this long after one starts.",
+            "instructions": "Added to requests for this camera only."
+          }
+        },
+        "reconfigure": {
+          "title": "Change camera",
+          "data": {
+            "camera": "Camera",
+            "name": "Name",
+            "triggers": "Triggers",
+            "nest_events": "Nest events",
+            "frames": "Frames",
+            "cooldown": "Cooldown",
+            "instructions": "Extra instructions"
+          },
+          "data_description": {
+            "name": "The name the AI is told. Leave empty to use the camera's name.",
+            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. Not needed for Nest cameras.",
+            "nest_events": "For Nest cameras: which events to describe.",
+            "frames": "How many frames the AI sees: taken from the clip, or snapshots one second apart.",
+            "cooldown": "Ignore new triggers from this camera for this long after one starts.",
+            "instructions": "Added to requests for this camera only."
+          }
+        }
+      },
+      "error": {
+        "already_configured": "This camera is already added."
+      },
+      "abort": {
+        "reconfigure_successful": "The camera was changed."
+      }
+    }
+  },
+  "selector": {
+    "nest_events": {
+      "options": {
+        "person": "Person",
+        "chime": "Doorbell ring",
+        "motion": "Motion",
+        "sound": "Sound"
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Event Reel is not set up or not loaded."
+    },
+    "end_before_start": {
+      "message": "The end is before the start."
+    },
+    "unknown_event": {
+      "message": "There is no event with id {id}."
+    }
+  },
+  "services": {
+    "describe": {
+      "name": "Describe",
+      "description": "Describes what a camera shows with the AI and stores it as an event.",
+      "fields": {
+        "camera": {
+          "name": "Camera",
+          "description": "The camera the event belongs to. Without a video or image, its snapshots are described."
+        },
+        "name": {
+          "name": "Name",
+          "description": "The name the AI is told. Defaults to the camera's name."
+        },
+        "video": {
+          "name": "Video",
+          "description": "A video to take frames from: a Home Assistant path such as a Nest event's attachment.video, or a media source id."
+        },
+        "image": {
+          "name": "Image",
+          "description": "An image to describe instead: a Home Assistant path or a media source id."
+        },
+        "frames": {
+          "name": "Frames",
+          "description": "How many frames the AI sees."
+        },
+        "instructions": {
+          "name": "Extra instructions",
+          "description": "Added to this request."
+        },
+        "labels": {
+          "name": "Labels",
+          "description": "What triggered it, for example person or chime. A chime keeps the event even when the AI sees nothing."
+        },
+        "store": {
+          "name": "Store",
+          "description": "Store the event. Off: only return it."
+        }
+      }
+    },
+    "add_event": {
+      "name": "Add event",
+      "description": "Adds an event you describe yourself, for example from another AI or a script.",
+      "fields": {
+        "title": {
+          "name": "Title",
+          "description": "A short title."
+        },
+        "description": {
+          "name": "Description",
+          "description": "A longer description."
+        },
+        "camera": {
+          "name": "Camera",
+          "description": "The camera it belongs to, so the card can show it with that camera's clip."
+        },
+        "start": {
+          "name": "Start",
+          "description": "When it happened. Defaults to now."
+        },
+        "end": {
+          "name": "End",
+          "description": "When it ended."
+        },
+        "category": {
+          "name": "Category",
+          "description": "What it is about."
+        },
+        "labels": {
+          "name": "Labels",
+          "description": "Free labels."
+        },
+        "image": {
+          "name": "Image",
+          "description": "A media source id of an image to show with the event."
+        }
+      }
+    },
+    "remove_event": {
+      "name": "Remove event",
+      "description": "Removes an event and its image.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "The event's id."
+        }
+      }
+    },
+    "get_events": {
+      "name": "Get events",
+      "description": "Returns stored events, newest first.",
+      "fields": {
+        "start": {
+          "name": "Start",
+          "description": "Only events from this time."
+        },
+        "end": {
+          "name": "End",
+          "description": "Only events until this time."
+        },
+        "cameras": {
+          "name": "Cameras",
+          "description": "Only events from these cameras."
+        },
+        "categories": {
+          "name": "Categories",
+          "description": "Only events in these categories, for example person."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "The most events to return."
+        }
+      }
+    }
+  }
+}

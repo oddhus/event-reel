@@ -1,0 +1,15 @@
+{
+  "domain": "event_reel",
+  "name": "Event Reel",
+  "after_dependencies": ["nest"],
+  "codeowners": ["@oddhus"],
+  "config_flow": true,
+  "dependencies": ["ai_task", "camera", "ffmpeg", "http", "media_source", "websocket_api"],
+  "documentation": "https://github.com/oddhus/event-reel",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/oddhus/event-reel/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

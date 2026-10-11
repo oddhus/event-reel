@@ -1,0 +1,108 @@
+describe:
+  fields:
+    camera:
+      required: true
+      selector:
+        entity:
+          domain: camera
+    name:
+      selector:
+        text:
+    video:
+      example: "{{ trigger.event.data.attachment.video }}"
+      selector:
+        text:
+    image:
+      selector:
+        text:
+    frames:
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 6
+    instructions:
+      selector:
+        text:
+          multiline: true
+    labels:
+      selector:
+        text:
+          multiple: true
+    store:
+      default: true
+      selector:
+        boolean:
+
+add_event:
+  fields:
+    title:
+      required: true
+      selector:
+        text:
+    description:
+      selector:
+        text:
+          multiline: true
+    camera:
+      selector:
+        entity:
+          domain: camera
+    start:
+      selector:
+        datetime:
+    end:
+      selector:
+        datetime:
+    category:
+      default: custom
+      selector:
+        select:
+          custom_value: true
+          options:
+            - person
+            - vehicle
+            - animal
+            - package
+            - doorbell
+            - motion
+            - custom
+    labels:
+      selector:
+        text:
+          multiple: true
+    image:
+      example: media-source://media_source/local/snapshots/front.jpg
+      selector:
+        text:
+
+remove_event:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+
+get_events:
+  fields:
+    start:
+      selector:
+        datetime:
+    end:
+      selector:
+        datetime:
+    cameras:
+      selector:
+        entity:
+          domain: camera
+          multiple: true
+    categories:
+      selector:
+        text:
+          multiple: true
+    limit:
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 1000

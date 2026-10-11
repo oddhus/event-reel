@@ -1,0 +1,238 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Event Reel",
+        "description": "Event Reel beskriver kamerahendelser med Home Assistants AI-oppgave og tar vare på dem for Event Reel-kortet. Legg til kameraer etterpå med **Legg til kamera**.",
+        "data": {
+          "ai_task_entity": "AI-oppgave",
+          "language": "Språk",
+          "retention_days": "Behold hendelser i",
+          "instructions": "Ekstra instruksjoner",
+          "keep_no_activity": "Behold hendelser der AI-en ikke ser noe"
+        },
+        "data_description": {
+          "ai_task_entity": "La stå tom for å bruke AI-oppgaven som er valgt som foretrukket under Innstillinger → AI-oppgave.",
+          "language": "Språket i titler og beskrivelser, som kode (en, nb, de) eller navn.",
+          "instructions": "Legges til i hver forespørsel, for eksempel hva som er vanlig aktivitet hjemme hos deg.",
+          "keep_no_activity": "Av: en falsk alarm gir ingen hendelse. En ringeklokke beholdes alltid."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Event Reel er allerede satt opp."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Event Reel",
+        "data": {
+          "ai_task_entity": "AI-oppgave",
+          "language": "Språk",
+          "retention_days": "Behold hendelser i",
+          "instructions": "Ekstra instruksjoner",
+          "keep_no_activity": "Behold hendelser der AI-en ikke ser noe"
+        },
+        "data_description": {
+          "ai_task_entity": "La stå tom for å bruke AI-oppgaven som er valgt som foretrukket under Innstillinger → AI-oppgave.",
+          "language": "Språket i titler og beskrivelser, som kode (en, nb, de) eller navn.",
+          "instructions": "Legges til i hver forespørsel, for eksempel hva som er vanlig aktivitet hjemme hos deg.",
+          "keep_no_activity": "Av: en falsk alarm gir ingen hendelse. En ringeklokke beholdes alltid."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "camera": {
+      "initiate_flow": {
+        "user": "Legg til kamera"
+      },
+      "entry_type": "Kamera",
+      "step": {
+        "user": {
+          "title": "Legg til et kamera",
+          "description": "Nest-kameraer beskrives fra sine egne hendelsesklipp. Andre kameraer beskrives fra stillbilder når en utløser slår seg på.",
+          "data": {
+            "camera": "Kamera",
+            "name": "Navn",
+            "triggers": "Utløsere",
+            "nest_events": "Nest-hendelser",
+            "frames": "Bilder",
+            "cooldown": "Pause",
+            "instructions": "Ekstra instruksjoner"
+          },
+          "data_description": {
+            "name": "Navnet AI-en får. La stå tomt for å bruke kameraets navn.",
+            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. Trengs ikke for Nest-kameraer.",
+            "nest_events": "For Nest-kameraer: hvilke hendelser som skal beskrives.",
+            "frames": "Hvor mange bilder AI-en ser: hentet fra klippet, eller stillbilder med ett sekunds mellomrom.",
+            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter.",
+            "instructions": "Legges bare til i forespørsler for dette kameraet."
+          }
+        },
+        "reconfigure": {
+          "title": "Endre kamera",
+          "data": {
+            "camera": "Kamera",
+            "name": "Navn",
+            "triggers": "Utløsere",
+            "nest_events": "Nest-hendelser",
+            "frames": "Bilder",
+            "cooldown": "Pause",
+            "instructions": "Ekstra instruksjoner"
+          },
+          "data_description": {
+            "name": "Navnet AI-en får. La stå tomt for å bruke kameraets navn.",
+            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. Trengs ikke for Nest-kameraer.",
+            "nest_events": "For Nest-kameraer: hvilke hendelser som skal beskrives.",
+            "frames": "Hvor mange bilder AI-en ser: hentet fra klippet, eller stillbilder med ett sekunds mellomrom.",
+            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter.",
+            "instructions": "Legges bare til i forespørsler for dette kameraet."
+          }
+        }
+      },
+      "error": {
+        "already_configured": "Dette kameraet er allerede lagt til."
+      },
+      "abort": {
+        "reconfigure_successful": "Kameraet ble endret."
+      }
+    }
+  },
+  "selector": {
+    "nest_events": {
+      "options": {
+        "person": "Person",
+        "chime": "Ringeklokke",
+        "motion": "Bevegelse",
+        "sound": "Lyd"
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Event Reel er ikke satt opp eller ikke lastet."
+    },
+    "end_before_start": {
+      "message": "Slutten er før starten."
+    },
+    "unknown_event": {
+      "message": "Det finnes ingen hendelse med id {id}."
+    }
+  },
+  "services": {
+    "describe": {
+      "name": "Beskriv",
+      "description": "Beskriver det et kamera viser med AI-en og lagrer det som en hendelse.",
+      "fields": {
+        "camera": {
+          "name": "Kamera",
+          "description": "Kameraet hendelsen hører til. Uten video eller bilde beskrives stillbilder fra kameraet."
+        },
+        "name": {
+          "name": "Navn",
+          "description": "Navnet AI-en får. Standard er kameraets navn."
+        },
+        "video": {
+          "name": "Video",
+          "description": "En video å hente bilder fra: en Home Assistant-sti som attachment.video fra en Nest-hendelse, eller en mediekilde-id."
+        },
+        "image": {
+          "name": "Bilde",
+          "description": "Et bilde å beskrive i stedet: en Home Assistant-sti eller en mediekilde-id."
+        },
+        "frames": {
+          "name": "Bilder",
+          "description": "Hvor mange bilder AI-en ser."
+        },
+        "instructions": {
+          "name": "Ekstra instruksjoner",
+          "description": "Legges til i denne forespørselen."
+        },
+        "labels": {
+          "name": "Etiketter",
+          "description": "Hva som utløste den, for eksempel person eller chime. Med chime beholdes hendelsen selv om AI-en ikke ser noe."
+        },
+        "store": {
+          "name": "Lagre",
+          "description": "Lagre hendelsen. Av: bare returner den."
+        }
+      }
+    },
+    "add_event": {
+      "name": "Legg til hendelse",
+      "description": "Legger til en hendelse du beskriver selv, for eksempel fra en annen AI eller et skript.",
+      "fields": {
+        "title": {
+          "name": "Tittel",
+          "description": "En kort tittel."
+        },
+        "description": {
+          "name": "Beskrivelse",
+          "description": "En lengre beskrivelse."
+        },
+        "camera": {
+          "name": "Kamera",
+          "description": "Kameraet den hører til, så kortet kan vise den med kameraets klipp."
+        },
+        "start": {
+          "name": "Start",
+          "description": "Når det skjedde. Standard er nå."
+        },
+        "end": {
+          "name": "Slutt",
+          "description": "Når det sluttet."
+        },
+        "category": {
+          "name": "Kategori",
+          "description": "Hva den handler om."
+        },
+        "labels": {
+          "name": "Etiketter",
+          "description": "Frie etiketter."
+        },
+        "image": {
+          "name": "Bilde",
+          "description": "En mediekilde-id for et bilde som vises med hendelsen."
+        }
+      }
+    },
+    "remove_event": {
+      "name": "Fjern hendelse",
+      "description": "Fjerner en hendelse og bildet dens.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "Hendelsens id."
+        }
+      }
+    },
+    "get_events": {
+      "name": "Hent hendelser",
+      "description": "Returnerer lagrede hendelser, nyeste først.",
+      "fields": {
+        "start": {
+          "name": "Start",
+          "description": "Bare hendelser fra dette tidspunktet."
+        },
+        "end": {
+          "name": "Slutt",
+          "description": "Bare hendelser til dette tidspunktet."
+        },
+        "cameras": {
+          "name": "Kameraer",
+          "description": "Bare hendelser fra disse kameraene."
+        },
+        "categories": {
+          "name": "Kategorier",
+          "description": "Bare hendelser i disse kategoriene, for eksempel person."
+        },
+        "limit": {
+          "name": "Grense",
+          "description": "Flest hendelser som returneres."
+        }
+      }
+    }
+  }
+}

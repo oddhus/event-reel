@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The oldest supported Home Assistant (hacs.json) and the newest tested one.
+        harness: ["0.13.367", "0.13.372"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv --python 3.14
+      - run: uv pip install "pytest-homeassistant-custom-component==${{ matrix.harness }}" -r requirements_test.txt
+      - run: uv run --no-project python scripts/component_requirements.py > component_requirements.txt
+      - run: uv pip install -r component_requirements.txt
+      - run: uv run --no-project ruff check .
+      - run: uv run --no-project pytest -q
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
