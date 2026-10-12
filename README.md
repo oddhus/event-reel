@@ -24,7 +24,8 @@ The card works without this integration. Install it when you want AI description
 
 - Home Assistant 2026.9 or newer.
 - An AI Task entity. With Ollama: add the Ollama integration, add an **AI Task** to it,
-  and choose a vision model such as `qwen3-vl:4b` or `gemma3:4b`.
+  and choose a vision model without a thinking mode, such as `qwen3-vl:4b-instruct` or
+  `gemma3:4b`. Thinking variants (plain `qwen3-vl:4b`) can return empty structured answers.
 
 ## Installation
 

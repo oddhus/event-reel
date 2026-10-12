@@ -76,3 +76,10 @@ def test_category_rules() -> None:
     assert category_for(other, ["motion"]) == "motion"
     assert category_for(None, ["person"]) == "person"
     assert category_for(None, []) == "motion"
+
+
+def test_structure_asks_for_the_verdict_last() -> None:
+    # Models fill fields in order; activity is judged after the description is written.
+    from custom_components.event_reel.prompt import STRUCTURE
+
+    assert list(STRUCTURE) == ["description", "title", "subject", "activity"]

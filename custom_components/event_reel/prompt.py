@@ -24,29 +24,31 @@ LANGUAGE_NAMES = {
     "sv": "Swedish",
 }
 
-# The answer we ask for, in the format of `ai_task.generate_data`'s `structure`.
+# The answer we ask for, in the format of `ai_task.generate_data`'s `structure`. The
+# order matters: a model fills the fields in this order, and judging activity after
+# describing what it sees makes small models far more consistent.
 STRUCTURE: dict[str, Any] = {
-    "activity": {
-        "description": (
-            "True only when a real person, vehicle, animal or delivery is clearly visible."
-        ),
+    "description": {
+        "description": "1 to 2 sentences about what is clearly visible.",
         "required": True,
-        "selector": {"boolean": {}},
-    },
-    "subject": {
-        "description": "The main subject that is clearly visible.",
-        "required": True,
-        "selector": {"select": {"options": SUBJECTS}},
+        "selector": {"text": {}},
     },
     "title": {
         "description": "3 to 7 words naming the subject and what it does.",
         "required": True,
         "selector": {"text": {}},
     },
-    "description": {
-        "description": "1 to 2 sentences about what is clearly visible.",
+    "subject": {
+        "description": "The main subject that is clearly visible.",
         "required": True,
-        "selector": {"text": {}},
+        "selector": {"select": {"options": SUBJECTS}},
+    },
+    "activity": {
+        "description": (
+            "True only when a real person, vehicle, animal or delivery is clearly visible."
+        ),
+        "required": True,
+        "selector": {"boolean": {}},
     },
 }
 
@@ -81,19 +83,19 @@ def build_instructions(
     lines = [
         f'You see {frames} from the camera "{camera_name}".',
         *([hints + " The detector can be wrong."] if hints else []),
-        "Describe only what is actually visible.",
-        "First decide whether there is real activity: a person, vehicle, animal or delivery "
-        "that is clearly visible. Shadows, reflections, plants, furniture, text, image noise "
-        "and blurry shapes are not activity.",
-        "- activity: true only when real activity is clearly visible.",
-        "- subject: the main subject.",
+        "Describe only what is actually visible. Don't guess.",
+        "- description: 1 to 2 natural sentences (15 to 45 words) about the people, vehicles, "
+        "animals or deliveries that are clearly visible: how many, visible clothes and colours, "
+        "what they actually do, direction only when it is clear, and items they clearly carry. "
+        "If none is clearly visible, say so. Shadows, reflections, plants, furniture, text, "
+        "image noise and blurry shapes don't count.",
         "- title: 3 to 7 words naming the subject and what it does. Don't name the camera, "
         "and don't use generic titles such as 'Person detected'.",
-        "- description: 1 to 2 natural sentences (15 to 45 words): how many, visible clothes "
-        "and colours, what they actually do, direction only when it is clear, and items "
-        "they clearly carry.",
+        "- subject: the main subject, or other when none is clearly visible.",
+        "- activity: true when your description names a person, vehicle, animal or delivery "
+        "that is clearly visible; otherwise false.",
         "Don't say that something was detected or recorded. Don't mention images, frames "
-        "or clips. Don't identify anyone. Ignore the background and fixed objects. Don't guess.",
+        "or clips. Don't identify anyone. Ignore the background and fixed objects.",
         f"Write the title and the description in {language_name(language)}.",
         *[text.strip() for text in extra if text and text.strip()],
     ]

@@ -83,7 +83,9 @@ async def frames_from_video(binary: str, video: bytes, wanted: int, workdir: Pat
             str(workdir / "sample_%03d.jpg"),
         ],
     )
-    samples = sorted(workdir.glob("sample_*.jpg"))
+    samples = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: sorted(workdir.glob("sample_*.jpg"))
+    )
     if not samples:
         raise HomeAssistantError("The video has no frames")
     return [samples[i] for i in pick_evenly(len(samples), wanted)]
