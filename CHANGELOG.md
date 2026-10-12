@@ -10,4 +10,7 @@ First version.
   unless the option to keep them is on.
 - Services `describe`, `add_event`, `remove_event` and `get_events`, the bus event
   `event_reel_event`, and websocket commands for the Event Reel card.
+- People see only events of cameras they're allowed to see. Removing events is for
+  administrators and automations.
+- Removing the integration deletes its events and key frames.
 - English and Norwegian Bokmål.

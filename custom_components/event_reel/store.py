@@ -7,6 +7,7 @@ import contextlib
 from datetime import datetime
 import logging
 from pathlib import Path
+import re
 import shutil
 from typing import Any
 
@@ -23,6 +24,9 @@ SAVE_DELAY = 10
 
 type ReelEvent = dict[str, Any]
 type Listener = Callable[[str, ReelEvent], None]
+
+# A key frame Event Reel saved itself: `<day>/<event id>.jpg` in its media folder.
+_OWN_FRAME = re.compile(r"\d{4}-\d{2}-\d{2}/(?P<id>[0-9a-f]{32})\.jpg")
 
 
 def event_ts(event: ReelEvent) -> float:
@@ -74,9 +78,20 @@ class MediaFolder:
     def media_id(self, relative: str) -> str:
         return f"media-source://media_source/{self.dir_id}/{MEDIA_SUBDIR}/{relative}"
 
-    def relative_from_media_id(self, media_id: str) -> str | None:
+    def own_frame(self, event: ReelEvent) -> Path | None:
+        """The key frame file Event Reel saved for this event, or None.
+
+        Images given to `add_event` are never ours to delete, even when they point into
+        this folder or at another event's frame.
+        """
+        key_frame = event.get("key_frame")
         prefix = f"media-source://media_source/{self.dir_id}/{MEDIA_SUBDIR}/"
-        return media_id.removeprefix(prefix) if media_id.startswith(prefix) else None
+        if not isinstance(key_frame, str) or not key_frame.startswith(prefix):
+            return None
+        match = _OWN_FRAME.fullmatch(key_frame.removeprefix(prefix))
+        if match is None or match["id"] != event.get("id"):
+            return None
+        return self.path_for(match.group(0))
 
 
 class EventStore:
@@ -157,18 +172,20 @@ class EventStore:
         if old:
             await self._delete_files(old)
             self._schedule_save()
+            for e in old:
+                self._notify("removed", e)
         return len(old)
 
     async def _delete_files(self, events: list[ReelEvent]) -> None:
-        paths = [
-            self.media.path_for(rel)
-            for e in events
-            if e.get("key_frame") and (rel := self.media.relative_from_media_id(e["key_frame"]))
-        ]
+        paths = [path for e in events if (path := self.media.own_frame(e))]
 
         def delete() -> None:
             for path in paths:
-                path.unlink(missing_ok=True)
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as err:
+                    _LOGGER.warning("Couldn't delete key frame %s: %s", path, err)
+                    continue
                 # Drop a day folder once it is empty.
                 with contextlib.suppress(OSError):
                     path.parent.rmdir()
@@ -177,10 +194,8 @@ class EventStore:
             await self.hass.async_add_executor_job(delete)
 
     async def async_keep_frame(self, frame: Path, event_id: str, start: datetime) -> str:
-        """Copy a frame into the media folder and return its media-source id."""
-        relative = (
-            f"{dt_util.as_local(start).date().isoformat()}/{event_id}{frame.suffix or '.jpg'}"
-        )
+        """Copy a JPEG frame into the media folder and return its media-source id."""
+        relative = f"{dt_util.as_local(start).date().isoformat()}/{event_id}.jpg"
         target = self.media.path_for(relative)
 
         def copy() -> None:

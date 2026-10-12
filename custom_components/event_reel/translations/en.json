@@ -194,13 +194,13 @@
         },
         "image": {
           "name": "Image",
-          "description": "A media source id of an image to show with the event."
+          "description": "An image to show with the event: a media source id or a Home Assistant path. Event Reel never deletes it."
         }
       }
     },
     "remove_event": {
       "name": "Remove event",
-      "description": "Removes an event and its image.",
+      "description": "Removes an event and the key frame Event Reel saved for it. Only administrators and automations may use it.",
       "fields": {
         "id": {
           "name": "ID",

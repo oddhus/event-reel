@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-import tempfile
 
 from homeassistant.components import camera
 from homeassistant.core import HomeAssistant
@@ -56,9 +55,11 @@ async def _run_ffmpeg(binary: str, args: list[str], stdin: bytes | None = None) 
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin), FFMPEG_TIMEOUT)
-    except TimeoutError:
+    except (TimeoutError, asyncio.CancelledError) as stop:
         proc.kill()
         await proc.wait()
+        if isinstance(stop, asyncio.CancelledError):
+            raise
         raise HomeAssistantError("ffmpeg took too long") from None
     if proc.returncode != 0:
         raise HomeAssistantError(f"ffmpeg failed: {err.decode(errors='replace').strip()}")
@@ -72,6 +73,9 @@ async def frames_from_video(binary: str, video: bytes, wanted: int, workdir: Pat
     await _run_ffmpeg(
         binary,
         [
+            # A playlist disguised as a clip must not make ffmpeg open other files or URLs.
+            "-protocol_whitelist",
+            "file",
             "-i",
             str(source),
             "-vf",
@@ -96,6 +100,8 @@ async def frame_from_image(binary: str, image: bytes, workdir: Path, name: str) 
     out = await _run_ffmpeg(
         binary,
         [
+            "-protocol_whitelist",
+            "pipe",
             "-i",
             "pipe:0",
             "-vf",
@@ -126,8 +132,3 @@ async def frames_from_camera(
         image = await camera.async_get_image(hass, entity_id)
         paths.append(await frame_from_image(binary, image.content, workdir, f"snap_{i:02d}.jpg"))
     return paths
-
-
-def make_workdir() -> Path:
-    """A private temporary folder for one analysis; the caller removes it."""
-    return Path(tempfile.mkdtemp(prefix="event_reel_"))

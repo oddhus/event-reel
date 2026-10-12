@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, cast
 import uuid
 
+from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import (
     HomeAssistant,
@@ -16,6 +17,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.util import dt as dt_util
 
 from ._schema import vol
@@ -29,12 +31,21 @@ SERVICE_ADD_EVENT = "add_event"
 SERVICE_REMOVE_EVENT = "remove_event"
 SERVICE_GET_EVENTS = "get_events"
 
+
+def _ha_media(value: Any) -> str:
+    """A Home Assistant path (/api/...) or a media source id; no outside URLs."""
+    value = cv.string(value)
+    if value.startswith("/") or value.startswith("media-source://"):
+        return value
+    raise vol.Invalid("Use a Home Assistant path (/api/...) or a media source id")
+
+
 DESCRIBE_SCHEMA = vol.Schema(
     {
         vol.Required("camera"): cv.entity_id,
         vol.Optional("name"): cv.string,
-        vol.Exclusive("video", "media"): cv.string,
-        vol.Exclusive("image", "media"): cv.string,
+        vol.Exclusive("video", "media"): _ha_media,
+        vol.Exclusive("image", "media"): _ha_media,
         vol.Optional("frames", default=DEFAULT_FRAMES): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=MAX_FRAMES)
         ),
@@ -151,8 +162,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def get_events(call: ServiceCall) -> ServiceResponse:
         data = _runtime(hass)
+        events = data.store.all()
+        # A user (not an automation) sees only events of cameras they may read.
+        if call.context.user_id and (user := await hass.auth.async_get_user(call.context.user_id)):
+            events = [
+                e
+                for e in events
+                if not e.get("camera") or user.permissions.check_entity(e["camera"], POLICY_READ)
+            ]
         events = select_events(
-            data.store.all(),
+            events,
             start=_local(call.data.get("start")),
             end=_local(call.data.get("end")),
             cameras=call.data.get("cameras"),
@@ -167,7 +186,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_EVENT, add_event, ADD_EVENT_SCHEMA, SupportsResponse.OPTIONAL
     )
-    hass.services.async_register(DOMAIN, SERVICE_REMOVE_EVENT, remove_event, REMOVE_EVENT_SCHEMA)
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_REMOVE_EVENT, remove_event, REMOVE_EVENT_SCHEMA
+    )
     hass.services.async_register(
         DOMAIN, SERVICE_GET_EVENTS, get_events, GET_EVENTS_SCHEMA, SupportsResponse.ONLY
     )

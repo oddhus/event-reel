@@ -60,9 +60,14 @@ The card works without this integration. Install it when you want AI description
 
 How the frames are taken:
 
-- **Nest cameras** use the clip of each Nest event, spread over the clip. A doorbell ring
-  during the cooldown marks the event as a ring.
-- **Other cameras** use snapshots one second apart, when a trigger turns on.
+- **Nest cameras** use frames spread over the clip of each Nest event, or the event's
+  picture for cameras that don't record clips. A doorbell ring during the cooldown marks
+  the event as a ring; if the AI saw nobody at that event, the ring gets its own event.
+- **Other cameras** use snapshots one second apart, taken as soon as a trigger turns on,
+  even while the AI is still busy with another camera.
+
+The AI describes one event at a time, so a local model is never asked twice at once. An
+answer that takes more than 3 minutes is given up on, and the event is kept without text.
 
 Nest cameras that stream with WebRTC (most newer models) have no snapshots in Home
 Assistant, so triggers on them would only send a placeholder picture. Use their Nest
@@ -121,7 +126,53 @@ actions:
 
 ### `event_reel.remove_event`
 
-Remove an event and its key frame by id.
+Remove an event by id, with the key frame Event Reel saved for it. Images you gave to
+`add_event` are never deleted. Only administrators and automations may remove events.
+
+## Frigate review summaries
+
+Frigate 0.17 and newer can describe its own reviews with AI (`review.genai` in the Frigate
+config), and the Event Reel card shows those on the Frigate rows by itself. To have them
+in `event_reel.get_events` and `event_reel_event` too, for a daily summary or a
+notification, copy them in with an automation:
+
+```yaml
+alias: Frigate review summaries to Event Reel
+triggers:
+  - trigger: mqtt
+    topic: frigate/reviews
+    value_template: "{{ value_json.type }}"
+    payload: genai             # sent once the summary is ready
+variables:
+  review: "{{ trigger.payload_json.after }}"
+  meta: "{{ review.data.metadata }}"
+  objects: "{{ review.data.objects | map('replace', '-verified', '') | list }}"
+  camera: >-
+    {{ integration_entities('frigate') | select('match', 'camera\.')
+       | select('is_state_attr', 'camera_name', review.camera) | first | default('') }}
+conditions:
+  - "{{ camera != '' and meta.title is defined }}"
+actions:
+  - action: event_reel.add_event
+    data:
+      title: "{{ meta.title }}"
+      description: "{{ meta.shortSummary or meta.scene }}"
+      camera: "{{ camera }}"
+      start: "{{ review.start_time | timestamp_local }}"
+      end: "{{ (review.end_time or review.start_time) | timestamp_local }}"
+      category: >-
+        {%- if 'person' in objects -%}person
+        {%- elif objects | select('in', ['car', 'motorcycle', 'bicycle', 'truck', 'bus', 'boat']) | list | count -%}vehicle
+        {%- elif objects | select('in', ['dog', 'cat', 'bird', 'horse']) | list | count -%}animal
+        {%- else -%}motion{%- endif -%}
+      labels: "{{ objects }}"
+      image: "/api/frigate/frigate/notifications/{{ review.data.detections | first }}/thumbnail.jpg"
+mode: queued
+```
+
+Replace `frigate/reviews` and the `frigate` in the image path if your Frigate uses another
+MQTT topic prefix or instance name. On the card, these events join their Frigate review as
+one row.
 
 ## Events
 
@@ -156,7 +207,7 @@ actions:
   "labels": ["person", "chime"],
   "key_frame": "media-source://media_source/local/event_reel/2026-10-08/4f0c….jpg",
   "source": "nest",
-  "nest": {"device_id": "…", "event_token": "…"},
+  "nest": {"device_id": "…", "event_token": "…", "video": true},
   "analysis": "ok"
 }
 ```
@@ -168,10 +219,13 @@ actions:
 - `analysis`: `ok`, `failed` (the AI didn't answer; the event is kept without text) or
   `none` (added with `add_event`).
 - `key_frame`: a media source id. Key frames are stored in your media folder under
-  `event_reel/`.
+  `event_reel/`. For `add_event`, whatever `image` was given.
+- `nest`: for Nest events. `video` is `false` for cameras that send only a picture.
 
 The card reads events through the websocket commands `event_reel/events/list`
-(`start_time`, `end_time`, `cameras`, `limit`) and `event_reel/events/subscribe`.
+(`start_time`, `end_time`, `cameras`, `limit` up to 5000) and
+`event_reel/events/subscribe`. Both, and `get_events` called by a person, leave out events
+of cameras that person isn't allowed to see.
 
 ## Coming from LLM Vision
 
@@ -179,13 +233,16 @@ The card reads events through the websocket commands `event_reel/events/list`
   Add Nest doorbells without triggers.
 - Replace `llmvision.get_events` with `event_reel.get_events`. The events have the same
   `start`, `title`, `description` and `key_frame` fields; `key_frame` is a media source id.
-- Frigate can write its own review summaries with GenAI (`review.genai` in Frigate 0.17+).
-  The card shows those without this integration.
+- For Frigate cameras, Frigate can write its own review summaries with GenAI
+  (`review.genai` in Frigate 0.17+). The card shows those without this integration; copy
+  them in (see [Frigate review summaries](#frigate-review-summaries)) when your
+  automations should see them.
 
 ## Privacy
 
 Frames are sent only to the AI Task you choose. With a local model such as Ollama they
 stay in your network. Key frames are kept in your media folder until the retention ends.
+Removing the integration deletes all its events and key frames.
 
 ## License
 

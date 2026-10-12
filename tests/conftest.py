@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -47,11 +48,15 @@ class FakeAI:
             "description": "One person in a red jacket waits at the door.",
         }
         self.attachment_files: list[list[Path]] = []
+        # When set, every answer waits for it, like a busy local model.
+        self.gate: asyncio.Event | None = None
 
     async def handle(self, call: ServiceCall) -> dict[str, Any]:
         from homeassistant.components import media_source
 
         self.calls.append(dict(call.data))
+        if self.gate is not None:
+            await self.gate.wait()
         # The attachments must resolve to local files, as the real AI Task requires.
         files = []
         for attachment in call.data.get("attachments", []):
@@ -110,6 +115,13 @@ def camera_subentry(camera: str, **data: Any) -> ConfigSubentryData:
 
 
 SetUp = Callable[..., Any]
+
+
+async def wait_until(check: Callable[[], bool], timeout: float = 2) -> None:
+    """Let background tasks run until `check` holds (they aren't awaited by HA's helpers)."""
+    async with asyncio.timeout(timeout):
+        while not check():
+            await asyncio.sleep(0.01)
 
 
 @pytest.fixture

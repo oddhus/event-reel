@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import ipaddress
 import logging
 from pathlib import Path
 import shutil
@@ -13,7 +14,7 @@ import time
 from typing import Any
 import uuid
 
-from aiohttp import ClientTimeout
+from aiohttp import ClientError, ClientTimeout
 from homeassistant.components import media_source
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.components.http.auth import async_sign_path
@@ -22,7 +23,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import ANALYSIS_FAILED, ANALYSIS_NONE, ANALYSIS_OK, QUEUE_SIZE
+from .const import (
+    AI_TIMEOUT,
+    ANALYSIS_FAILED,
+    ANALYSIS_NONE,
+    ANALYSIS_OK,
+    MAX_MEDIA_BYTES,
+    QUEUE_SIZE,
+)
 from .frames import frame_from_image, frames_from_camera, frames_from_video
 from .prompt import STRUCTURE, Answer, build_instructions, category_for, parse_answer
 from .store import EventStore, ReelEvent
@@ -32,6 +40,8 @@ _LOGGER = logging.getLogger(__name__)
 # Waits before fetching a Nest clip again: the clip can arrive a little after the event.
 MEDIA_RETRY_DELAYS = (3, 6, 12)
 FETCH_TIMEOUT = ClientTimeout(total=60)
+# What getting frames can fail with; the event is then kept without a description.
+FRAME_ERRORS = (HomeAssistantError, ClientError, TimeoutError, OSError)
 
 
 class MediaNotReady(HomeAssistantError):
@@ -53,12 +63,16 @@ class Job:
     video: str | None = None
     image: str | None = None
     snapshot: bool = False
-    nest: dict[str, str] | None = None
+    nest: dict[str, Any] | None = None
     trigger: str | None = None
     # Keep the event even when the AI sees nothing (a doorbell ring is worth showing).
     keep_without_activity: bool = False
     store: bool = True
     result: asyncio.Future[ReelEvent | None] | None = None
+    # Snapshots are taken when the job is submitted, not when the worker gets to it.
+    workdir: Path | None = None
+    capture: asyncio.Task[list[Path]] | None = None
+    finished: bool = False
 
 
 @dataclass(slots=True)
@@ -81,7 +95,7 @@ class Analyzer:
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._worker: asyncio.Task[None] | None = None
         self._cooldown_until: dict[str, float] = {}
-        # Per camera: the job waiting or running in its cooldown, then the event it made.
+        # Per camera: the job of the current cooldown until it makes an event, then that event.
         self._recent_job: dict[str, Job] = {}
         self._recent_event: dict[str, str] = {}
 
@@ -96,8 +110,8 @@ class Analyzer:
                 await self._worker
         while not self._queue.empty():
             job = self._queue.get_nowait()
-            if job.result and not job.result.done():
-                job.result.cancel()
+            _discard(job.capture)
+            _fail(job, HomeAssistantError("Event Reel stopped before the analysis ran"))
 
     @callback
     def async_submit(self, job: Job, cooldown: float = 0) -> bool:
@@ -109,18 +123,30 @@ class Analyzer:
         key = job.camera
         if key and cooldown and self._cooldown_until.get(key, 0) > now:
             if "chime" in job.labels:
-                self._add_chime(key)
-            _LOGGER.debug("Skipping %s: cooling down", key)
+                self._add_chime(job)
+            else:
+                _LOGGER.debug("Skipping %s: cooling down", key)
             return False
-        try:
-            self._queue.put_nowait(job)
-        except asyncio.QueueFull:
-            _LOGGER.warning("Too many waiting analyses; skipped one for %s", job.camera_name)
+        if not self._enqueue(job):
             return False
         if key and cooldown:
             self._cooldown_until[key] = now + cooldown
             self._recent_job[key] = job
             self._recent_event.pop(key, None)
+        return True
+
+    @callback
+    def _enqueue(self, job: Job) -> bool:
+        try:
+            self._queue.put_nowait(job)
+        except asyncio.QueueFull:
+            _LOGGER.warning("Too many waiting analyses; skipped one for %s", job.camera_name)
+            return False
+        if job.snapshot and job.camera:
+            job.workdir = self._new_workdir()
+            job.capture = self.hass.async_create_background_task(
+                self._capture(job, job.workdir), f"event_reel snapshots {job.camera}"
+            )
         return True
 
     async def async_join(self) -> None:
@@ -135,15 +161,28 @@ class Analyzer:
         return await job.result
 
     @callback
-    def _add_chime(self, camera: str) -> None:
-        if (job := self._recent_job.get(camera)) and "chime" not in job.labels:
-            job.labels.append("chime")
+    def _add_chime(self, chime: Job) -> None:
+        camera = chime.camera
+        assert camera
+        job = self._recent_job.get(camera)
+        if job is not None and not job.finished:
+            # The ring belongs to the moment that is still being described.
+            if "chime" not in job.labels:
+                job.labels.append("chime")
             job.keep_without_activity = True
+            return
         event_id = self._recent_event.get(camera)
-        if event_id and (event := self.store.get(event_id)) and "chime" not in event["labels"]:
-            self.store.async_update(
-                event_id, {"labels": [*event["labels"], "chime"], "category": "doorbell"}
-            )
+        if event_id is not None:
+            event = self.store.get(event_id)
+            if event is not None and "chime" not in event["labels"]:
+                self.store.async_update(
+                    event_id, {"labels": [*event["labels"], "chime"], "category": "doorbell"}
+                )
+            return
+        # The moment was described without making an event (nobody seen, or it failed):
+        # the ring is still worth its own event.
+        if self._enqueue(chime):
+            self._recent_job[camera] = chime
 
     async def _run(self) -> None:
         while True:
@@ -151,34 +190,43 @@ class Analyzer:
             try:
                 event = await self._process(job)
             except asyncio.CancelledError:
-                if job.result and not job.result.done():
-                    job.result.cancel()
+                _fail(job, HomeAssistantError("Event Reel stopped during the analysis"))
                 raise
             except Exception as err:  # keep the worker alive whatever one job does
                 _LOGGER.exception("Analysis for %s failed", job.camera_name)
-                if job.result and not job.result.done():
-                    job.result.set_exception(err)
+                _fail(job, err)
             else:
                 if job.result and not job.result.done():
                     job.result.set_result(event)
             finally:
+                job.finished = True
                 self._queue.task_done()
 
+    def _new_workdir(self) -> Path:
+        return self.store.media.path_for(f"_work/{uuid.uuid4().hex}")
+
     async def _process(self, job: Job) -> ReelEvent | None:
-        work_rel = f"_work/{uuid.uuid4().hex}"
-        workdir = self.store.media.path_for(work_rel)
-        await self.hass.async_add_executor_job(lambda: workdir.mkdir(parents=True))
+        workdir = job.workdir or self._new_workdir()
         try:
+            await self.hass.async_add_executor_job(
+                lambda: workdir.mkdir(parents=True, exist_ok=True)
+            )
             frames: list[Path] = []
             try:
                 frames = await self._frames(job, workdir)
-            except HomeAssistantError as err:
+            except FRAME_ERRORS as err:
                 _LOGGER.warning("No frames for %s: %s", job.camera_name, err)
 
             answer: Answer | None = None
             if frames:
                 try:
-                    answer = parse_answer(await self._ask(job, frames, work_rel))
+                    async with asyncio.timeout(AI_TIMEOUT):
+                        data = await self._ask(job, frames, workdir)
+                    answer = parse_answer(data)
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "The AI took more than %s s to describe %s", AI_TIMEOUT, job.camera_name
+                    )
                 except HomeAssistantError as err:
                     _LOGGER.warning("The AI couldn't describe %s: %s", job.camera_name, err)
 
@@ -192,9 +240,18 @@ class Analyzer:
                 return None
             return await self._make_event(job, frames, answer)
         finally:
+            _discard(job.capture)
             await self.hass.async_add_executor_job(shutil.rmtree, workdir, True)
 
+    async def _capture(self, job: Job, workdir: Path) -> list[Path]:
+        assert job.camera
+        await self.hass.async_add_executor_job(lambda: workdir.mkdir(parents=True, exist_ok=True))
+        binary = get_ffmpeg_manager(self.hass).binary
+        return await frames_from_camera(self.hass, binary, job.camera, job.frames, workdir)
+
     async def _frames(self, job: Job, workdir: Path) -> list[Path]:
+        if job.capture:
+            return await job.capture
         binary = get_ffmpeg_manager(self.hass).binary
         if job.video:
             data = await self._load_media(job.video, retry=job.nest is not None)
@@ -211,7 +268,7 @@ class Analyzer:
         if ref.startswith("media-source://"):
             resolved = await media_source.async_resolve_media(self.hass, ref, None)
             if resolved.path is not None:
-                return await self.hass.async_add_executor_job(resolved.path.read_bytes)
+                return await self.hass.async_add_executor_job(_read_limited, resolved.path)
             ref = resolved.url
         for delay in (*MEDIA_RETRY_DELAYS, None) if retry else (None,):
             try:
@@ -223,27 +280,51 @@ class Analyzer:
         raise MediaNotReady(ref)  # not reached
 
     async def _fetch(self, url: str) -> bytes:
+        """GET an HA path (signed for the read-only content user) or a resolved media URL."""
+        shown = url.split("?")[0]
         if url.startswith("/"):
             signed = async_sign_path(self.hass, url, timedelta(minutes=5), use_content_user=True)
+            # HA's own certificate doesn't match the loopback address.
+            session = async_get_clientsession(self.hass, verify_ssl=False)
             url = f"{self._local_base()}{signed}"
-        session = async_get_clientsession(self.hass, verify_ssl=False)
-        async with session.get(url, timeout=FETCH_TIMEOUT) as resp:
-            if resp.status == 404:
-                raise MediaNotReady(f"Not found: {url.split('?')[0]}")
-            if resp.status >= 400:
-                raise HomeAssistantError(f"HTTP {resp.status} for {url.split('?')[0]}")
-            return await resp.read()
+        elif url.startswith(("http://", "https://")):
+            session = async_get_clientsession(self.hass)
+        else:
+            raise HomeAssistantError(f"Unsupported media address: {shown}")
+        try:
+            async with session.get(url, timeout=FETCH_TIMEOUT) as resp:
+                if resp.status == 404:
+                    raise MediaNotReady(f"Not found: {shown}")
+                if resp.status >= 400:
+                    raise HomeAssistantError(f"HTTP {resp.status} for {shown}")
+                body = bytearray()
+                async for chunk in resp.content.iter_chunked(1 << 16):
+                    body += chunk
+                    if len(body) > MAX_MEDIA_BYTES:
+                        raise HomeAssistantError(f"Too large: {shown}")
+                return bytes(body)
+        except (ClientError, TimeoutError) as err:
+            # Never log the signed address.
+            raise HomeAssistantError(f"Couldn't fetch {shown}: {type(err).__name__}") from None
 
     def _local_base(self) -> str:
+        """Where HA's own HTTP server answers on this machine."""
         api = self.hass.config.api
         if api is None:
             return "http://127.0.0.1:8123"
-        # With server_host set, HA may not listen on loopback.
-        host = "127.0.0.1" if api.host == api.local_ip else api.host
+        # `host` is the first `server_host`, or the local IP when HA listens everywhere.
+        host = api.host or "127.0.0.1"
+        with contextlib.suppress(ValueError):
+            address = ipaddress.ip_address(host)
+            if address.is_unspecified:
+                host = "127.0.0.1"
+            elif address.version == 6:
+                host = f"[{host}]"
         return f"{'https' if api.use_ssl else 'http'}://{host}:{api.port}"
 
-    async def _ask(self, job: Job, frames: list[Path], work_rel: str) -> Any:
+    async def _ask(self, job: Job, frames: list[Path], workdir: Path) -> Any:
         extra = [t for t in (self.settings.instructions, job.instructions) if t]
+        work_rel = workdir.relative_to(self.store.media.root).as_posix()
         data: dict[str, Any] = {
             "task_name": f"Event Reel: {job.camera_name}",
             "instructions": build_instructions(
@@ -273,9 +354,12 @@ class Analyzer:
         event_id = uuid.uuid4().hex
         key_frame = None
         if frames and job.store:
-            key_frame = await self.store.async_keep_frame(
-                frames[len(frames) // 2], event_id, job.start
-            )
+            try:
+                key_frame = await self.store.async_keep_frame(
+                    frames[len(frames) // 2], event_id, job.start
+                )
+            except OSError as err:
+                _LOGGER.warning("Couldn't keep a key frame for %s: %s", job.camera_name, err)
         event: ReelEvent = {
             "id": event_id,
             "start": dt_util.as_local(job.start).isoformat(),
@@ -295,10 +379,10 @@ class Analyzer:
             event["trigger"] = job.trigger
         if job.store:
             self.store.async_add(event)
-            if job.camera:
+            # A later ring in this cooldown marks this event, unless a newer job owns it.
+            if job.camera and self._recent_job.get(job.camera) is job:
+                del self._recent_job[job.camera]
                 self._recent_event[job.camera] = event_id
-                if self._recent_job.get(job.camera) is job:
-                    del self._recent_job[job.camera]
         return event
 
     @staticmethod
@@ -307,3 +391,24 @@ class Analyzer:
             return ANALYSIS_OK
         has_media = bool(job.video or job.image or job.snapshot)
         return ANALYSIS_FAILED if has_media else ANALYSIS_NONE
+
+
+def _fail(job: Job, err: BaseException) -> None:
+    if job.result and not job.result.done():
+        job.result.set_exception(err)
+
+
+def _discard(task: asyncio.Task[Any] | None) -> None:
+    """Stop a snapshot task that is no longer needed, without leaving its error unread."""
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    elif not task.cancelled():
+        task.exception()
+
+
+def _read_limited(path: Path) -> bytes:
+    if path.stat().st_size > MAX_MEDIA_BYTES:
+        raise HomeAssistantError(f"Too large: {path.name}")
+    return path.read_bytes()

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.auth.models import User
+from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
@@ -12,9 +14,15 @@ from homeassistant.util import dt as dt_util
 
 from ._schema import vol
 from .const import DOMAIN
-from .store import select_events
+from .store import ReelEvent, select_events
 
 SIGNAL_EVENT = f"{DOMAIN}_event"
+
+
+def _visible(user: User, event: ReelEvent) -> bool:
+    """A user sees an event only if they may read its camera, as for the camera itself."""
+    camera = event.get("camera")
+    return not camera or user.permissions.check_entity(camera, POLICY_READ)
 
 
 @callback
@@ -55,9 +63,11 @@ def ws_list_events(
             if parsed is None:
                 connection.send_error(msg["id"], "invalid_format", f"Invalid {key}")
                 return
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt_util.get_default_time_zone())
             bounds[key] = parsed
     events = select_events(
-        store.all(),
+        [e for e in store.all() if _visible(connection.user, e)],
         start=bounds.get("start_time"),
         end=bounds.get("end_time"),
         cameras=msg.get("cameras"),
@@ -75,6 +85,8 @@ def ws_subscribe_events(
 
     @callback
     def forward(action: str, event: dict[str, Any]) -> None:
+        if not _visible(connection.user, event):
+            return
         connection.send_message(
             websocket_api.event_message(msg["id"], {"action": action, "event": event})
         )

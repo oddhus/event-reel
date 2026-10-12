@@ -13,6 +13,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -26,6 +27,8 @@ from .const import (
     DEFAULT_RETENTION_DAYS,
     DOMAIN,
     EVENT_EVENT_REEL,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     SUBENTRY_CAMERA,
 )
 from .runtime import EventReelData
@@ -111,6 +114,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: EventReelConfigEntry) -
     await data.analyzer.async_stop()
     await data.store.async_flush()
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: EventReelConfigEntry) -> None:
+    """Delete the stored events and key frames (pictures of people) with the integration."""
+    await Store(hass, STORAGE_VERSION, STORAGE_KEY).async_remove()
+    if hass.config.media_dirs:
+        media = MediaFolder(hass)
+        await hass.async_add_executor_job(shutil.rmtree, media.root, True)
 
 
 async def _async_reload(hass: HomeAssistant, entry: EventReelConfigEntry) -> None:

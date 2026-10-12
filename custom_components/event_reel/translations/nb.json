@@ -194,13 +194,13 @@
         },
         "image": {
           "name": "Bilde",
-          "description": "En mediekilde-id for et bilde som vises med hendelsen."
+          "description": "Et bilde som vises med hendelsen: en mediekilde-id eller en Home Assistant-sti. Event Reel sletter det aldri."
         }
       }
     },
     "remove_event": {
       "name": "Fjern hendelse",
-      "description": "Fjerner en hendelse og bildet dens.",
+      "description": "Fjerner en hendelse og nøkkelbildet Event Reel lagret for den. Bare administratorer og automasjoner kan bruke den.",
       "fields": {
         "id": {
           "name": "ID",

@@ -124,13 +124,19 @@ class CameraSource:
         token = data.get("nest_event_id")
         if not token:
             return
+        video = attachment.get("video")
+        # Cameras without clips send only an image. The attachment is its 175 px thumbnail;
+        # the same path without `/thumbnail` is the full picture.
+        image = None if video else attachment.get("image")
+        if image:
+            image = image.removesuffix("/thumbnail")
         job = self._job(
             start=_parse_time(data.get("timestamp")),
             source="nest",
             labels=[label],
-            video=attachment.get("video"),
-            image=None if attachment.get("video") else attachment.get("image"),
-            nest={"device_id": self.nest_device, "event_token": token},
+            video=video,
+            image=image,
+            nest={"device_id": self.nest_device, "event_token": token, "video": bool(video)},
             keep_without_activity=label == "chime",
         )
         self.analyzer.async_submit(job, self.cooldown)

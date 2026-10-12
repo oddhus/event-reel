@@ -43,6 +43,10 @@ SNAPSHOT_INTERVAL: Final = 1.0
 FRAME_MAX_EDGE: Final = 1280
 # Waiting jobs before new triggers are dropped (protects a local model).
 QUEUE_SIZE: Final = 10
+# Seconds one AI answer may take, so a stuck model can't block every later event.
+AI_TIMEOUT: Final = 180
+# Largest clip or image fetched for an analysis.
+MAX_MEDIA_BYTES: Final = 100 * 1024 * 1024
 
 MEDIA_SUBDIR: Final = "event_reel"
 STORAGE_KEY: Final = "event_reel.events"
