@@ -34,5 +34,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # No icon yet: brand assets only matter for the HACS default list.
-          ignore: brands
