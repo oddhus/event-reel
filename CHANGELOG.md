@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- An icon. Home Assistant 2026.9 and newer show it for the integration, from
+  `custom_components/event_reel/brand/`; its source is `docs/icon.svg`.
+
 ## 0.1.0 - 2026-10-13
 
 First version.

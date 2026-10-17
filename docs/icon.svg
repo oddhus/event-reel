@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <mask id="holes">
+      <rect width="512" height="512" fill="#fff"/>
+      <!-- Five reel holes at radius 150, starting at the top -->
+      <circle cx="256" cy="106" r="47" fill="#000"/>
+      <circle cx="398.7" cy="209.6" r="47" fill="#000"/>
+      <circle cx="344.2" cy="377.4" r="47" fill="#000"/>
+      <circle cx="167.8" cy="377.4" r="47" fill="#000"/>
+      <circle cx="113.3" cy="209.6" r="47" fill="#000"/>
+    </mask>
+  </defs>
+  <!-- Reel -->
+  <circle cx="256" cy="256" r="246" fill="#0E7C86" mask="url(#holes)"/>
+  <!-- Rim -->
+  <circle cx="256" cy="256" r="226" fill="none" stroke="#0A5F67" stroke-width="10" mask="url(#holes)"/>
+  <!-- Hub -->
+  <circle cx="256" cy="256" r="84" fill="#0A5F67"/>
+  <!-- AI sparkle -->
+  <path d="M256 176 C264 233 279 248 336 256 C279 264 264 279 256 336 C248 279 233 264 176 256 C233 248 248 233 256 176 Z" fill="#FFC83D"/>
+  <circle cx="306" cy="206" r="10" fill="#FFC83D"/>
+</svg>
