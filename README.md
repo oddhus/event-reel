@@ -218,6 +218,9 @@ actions:
   trigger events.
 - `analysis`: `ok`, `failed` (the AI didn't answer; the event is kept without text) or
   `none` (added with `add_event`).
+- `title` is empty when the event has no AI text, and for a doorbell ring where the AI saw
+  nobody in the clip: the ring is the event, so show something like "The doorbell rang".
+  The description then says what the clip showed.
 - `key_frame`: a media source id. Key frames are stored in your media folder under
   `event_reel/`. For `add_event`, whatever `image` was given.
 - `nest`: for Nest events. `video` is `false` for cameras that send only a picture.
