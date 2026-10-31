@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Thursdays: the morning after Home Assistant's monthly release (first Wednesday). Not on
+    # the hour, which is when GitHub's scheduled runs are most often delayed.
+    - cron: "23 6 * * 4"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -21,6 +26,23 @@ jobs:
       - run: uv pip install -r component_requirements.txt
       - run: uv run --no-project ruff check .
       - run: uv run --no-project ruff format --check .
+      - run: uv run --no-project pytest -q
+
+  # The tests against the newest Home Assistant (the harness is not pinned), to catch changes
+  # such as the switch from voluptuous to probatio in 2026.10 (see _schema.py) before users
+  # hit them. It runs only weekly and by hand: a Home Assistant release that breaks something
+  # is not a pull request's fault, and continue-on-error would keep the run green, so nobody
+  # would be told.
+  test-newest:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv --python 3.14
+      - run: uv pip install pytest-homeassistant-custom-component -r requirements_test.txt
+      - run: uv run --no-project python scripts/component_requirements.py > component_requirements.txt
+      - run: uv pip install -r component_requirements.txt
       - run: uv run --no-project pytest -q
 
   hassfest:
