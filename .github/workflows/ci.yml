@@ -20,6 +20,7 @@ jobs:
       - run: uv run --no-project python scripts/component_requirements.py > component_requirements.txt
       - run: uv pip install -r component_requirements.txt
       - run: uv run --no-project ruff check .
+      - run: uv run --no-project ruff format --check .
       - run: uv run --no-project pytest -q
 
   hassfest:
