@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Event Reel card
+    url: https://github.com/oddhus/event-reel-card/issues
+    about: Problems with the dashboard card itself, such as how it lists or plays events, belong there.
