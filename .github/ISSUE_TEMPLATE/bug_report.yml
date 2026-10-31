@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in the integration doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This repository is public: replace your own entity ids, names,
+        hostnames and tokens with neutral examples (`camera.front_door`,
+        `binary_sensor.front_door_person`), and leave out camera footage and screenshots of
+        your home.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what Event Reel did.
+      placeholder: A person rang the doorbell, but no event appeared in the card.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What Event Reel should have done instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Camera kind
+      description: How the events reach Event Reel.
+      options:
+        - Nest events (a Nest camera or doorbell)
+        - Trigger snapshots (another camera, started by a binary sensor or event entity)
+        - The describe or add_event service
+        - Not about one camera (setup, options or storage)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Event Reel version
+      description: >-
+        Shown in HACS, or as `version` in `custom_components/event_reel/manifest.json` if you
+        installed it by hand.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version
+      description: Settings → About.
+      placeholder: "2026.10.2"
+    validations:
+      required: true
+  - type: input
+    id: ai
+    attributes:
+      label: AI Task integration and model
+      description: >-
+        The integration the AI Task belongs to, and the model it uses. Event Reel's AI Task is
+        set under Settings → Devices & services → Event Reel → Configure.
+      placeholder: Ollama, gemma3:4b
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug logs
+      description: >-
+        Turn on Settings → Devices & services → Event Reel → ⋮ → Enable debug logging, make
+        the problem happen again, then choose Disable debug logging in the same menu. Home
+        Assistant downloads the log; paste the lines around the problem here. Replace entity
+        ids and names, and remove hostnames, IP addresses, tokens and `authSig=` values
+        first.
+      render: text

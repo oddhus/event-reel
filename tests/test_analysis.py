@@ -248,8 +248,8 @@ async def test_a_ring_is_kept_even_when_nobody_is_seen(
     fake_ai.answer = {
         "activity": False,
         "subject": "other",
-        "title": "Empty step",
-        "description": None,
+        "title": "No visible activity",
+        "description": "Nobody is on the steps.",
     }
     device_id = _nest_camera(hass)
     with patch(
@@ -261,6 +261,10 @@ async def test_a_ring_is_kept_even_when_nobody_is_seen(
         (event,) = await _events(hass, entry)
     assert event["category"] == "doorbell"
     assert event["labels"] == ["chime"]
+    # The ring is the event: no "no activity" title, but the clip's description stays.
+    assert event["title"] == ""
+    assert event["description"] == "Nobody is on the steps."
+    assert event["analysis"] == "ok"
 
 
 async def test_a_ring_during_the_cooldown_marks_the_event_as_a_ring(

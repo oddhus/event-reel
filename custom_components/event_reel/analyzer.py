@@ -369,12 +369,16 @@ class Analyzer:
                 )
             except OSError as err:
                 _LOGGER.warning("Couldn't keep a key frame for %s: %s", job.camera_name, err)
+        # For a ring the AI saw nobody at, the ring is the event: an empty title lets the card
+        # and automations say "the doorbell rang" instead of the AI's "no activity" title.
+        # The description still says what the clip showed.
+        quiet_ring = answer is not None and answer.activity is False and "chime" in job.labels
         event: ReelEvent = {
             "id": event_id,
             "start": dt_util.as_local(job.start).isoformat(),
             "end": None,
             "camera": job.camera,
-            "title": answer.title if answer else "",
+            "title": answer.title if answer and not quiet_ring else "",
             "description": answer.description if answer else None,
             "category": category_for(answer, job.labels),
             "labels": list(job.labels),
