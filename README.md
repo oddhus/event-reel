@@ -68,9 +68,10 @@ The card works without this integration. Install it when you want AI description
 
 How the frames are taken:
 
-- **Nest cameras** use frames spread over the clip of each Nest event, or the event's
-  picture for cameras that don't record clips. A doorbell ring during the cooldown marks
-  the event as a ring; if the AI saw nobody at that event, the ring gets its own event.
+- **Nest cameras** use frames spread over the clip of each Nest event, from the middle of
+  equal parts of it: its first and last moments are often empty. Cameras that don't record
+  clips send the event's picture instead. A doorbell ring during the cooldown marks the
+  event as a ring; if the AI saw nobody at that event, the ring gets its own event.
 - **Other cameras** use snapshots one second apart, taken as soon as a trigger turns on,
   even while the AI is still busy with another camera.
 
@@ -80,6 +81,19 @@ answer that takes more than 3 minutes is given up on, and the event is kept with
 Nest cameras that stream with WebRTC (most newer models) have no snapshots in Home
 Assistant, so triggers on them would only send a placeholder picture. Use their Nest
 events instead.
+
+## When the AI misses something
+
+Turn on debug logging to see why: Settings → Devices & services → Event Reel, open the
+menu (⋮) → **Enable debug logging**. The log then shows how long each clip was, which
+moments of it the AI saw, and every answer the AI gave.
+
+What can help:
+
+- The camera's **Extra instructions**: tell the AI what is normal there, for example
+  "People at the door stand close to the camera and are often only partly in view."
+- **Keep events where the AI sees nothing**, so a missed visitor still leaves an event.
+- A larger vision model, if your hardware runs one.
 
 ## Services
 
