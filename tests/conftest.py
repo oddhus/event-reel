@@ -48,6 +48,8 @@ class FakeAI:
             "description": "One person in a red jacket waits at the door.",
         }
         self.attachment_files: list[list[Path]] = []
+        # What each call's frames contained, read before they're cleaned up.
+        self.attachments: list[list[bytes]] = []
         # When set, every answer waits for it, like a busy local model.
         self.gate: asyncio.Event | None = None
 
@@ -66,6 +68,7 @@ class FakeAI:
             assert resolved.path is not None and resolved.path.is_file()
             files.append(resolved.path)
         self.attachment_files.append(files)
+        self.attachments.append([path.read_bytes() for path in files])
         if isinstance(self.answer, Exception):
             raise self.answer
         return {"conversation_id": "test", "data": self.answer}
@@ -84,20 +87,34 @@ def register_fake_ai(hass: HomeAssistant, ai: FakeAI) -> None:
     )
 
 
-async def _fake_ffmpeg(binary: str, args: list[str], stdin: bytes | None = None) -> bytes:
-    """Write fake frames instead of running ffmpeg: 8 samples for a video, bytes for an image."""
-    if stdin is not None:
-        return b"jpeg:" + stdin[:16]
-    pattern = Path(args[-1])
-    for i in range(1, 9):
-        (pattern.parent / f"sample_{i:03d}.jpg").write_bytes(f"frame {i}".encode())
-    return b""
+class FakeFFmpeg:
+    """Stands in for ffmpeg: a video is a clip `clip_seconds` long.
+
+    Sampling it at `fps=N` writes a frame for every 1/N s, each saying which moment it shows.
+    """
+
+    def __init__(self) -> None:
+        self.clip_seconds = 4.0
+
+    async def run(self, binary: str, args: list[str], stdin: bytes | None = None) -> bytes:
+        if stdin is not None:
+            return b"jpeg:" + stdin[:16]
+        fps = float(args[args.index("-vf") + 1].split(",")[0].removeprefix("fps="))
+        limit = int(args[args.index("-frames:v") + 1])
+        for i in range(min(int(self.clip_seconds * fps), limit)):
+            Path(args[-1] % (i + 1)).write_bytes(f"frame at {i / fps:.1f} s".encode())
+        return b""
 
 
 @pytest.fixture
-def no_ffmpeg() -> Any:
+def fake_ffmpeg() -> FakeFFmpeg:
+    return FakeFFmpeg()
+
+
+@pytest.fixture
+def no_ffmpeg(fake_ffmpeg: FakeFFmpeg) -> Any:
     with (
-        patch("custom_components.event_reel.frames._run_ffmpeg", _fake_ffmpeg),
+        patch("custom_components.event_reel.frames._run_ffmpeg", fake_ffmpeg.run),
         patch("custom_components.event_reel.frames.SNAPSHOT_INTERVAL", 0),
         patch("custom_components.event_reel.analyzer.get_ffmpeg_manager") as manager,
     ):

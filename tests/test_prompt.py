@@ -22,13 +22,25 @@ def test_instructions_name_camera_frames_language_and_hints() -> None:
         camera_name="Front door",
         frame_count=3,
         language="nb",
-        labels=["chime"],
+        labels=["person"],
         extra=["Packages are often left on the step.", "  "],
     )
     assert 'You see 3 frames, in time order, from the camera "Front door".' in text
-    assert "Someone pressed the doorbell. The detector can be wrong." in text
+    assert "A detector reported a person. The detector can be wrong." in text
     assert "Write the title and the description in Norwegian Bokmål." in text
     assert text.endswith("Packages are often left on the step.")
+
+
+def test_a_ring_is_not_doubted() -> None:
+    """A pressed button isn't a detector that can be wrong, not even during a person event."""
+    for labels in (["chime"], ["person", "chime"]):
+        text = build_instructions(
+            camera_name="Front door", frame_count=3, language="en", labels=labels, extra=[]
+        )
+        assert "Someone pressed the doorbell, so a visitor is most likely there." in text
+        # Someone at the door stands close to its camera.
+        assert "only partly in view or a little blurred; they still count." in text
+        assert "can be wrong" not in text
 
 
 def test_instructions_for_one_frame_without_hints() -> None:

@@ -17,23 +17,23 @@ _LOGGER = logging.getLogger(__name__)
 FFMPEG_TIMEOUT = 60
 # Frames per second taken from a clip before picking the ones to send.
 CLIP_SAMPLE_FPS = 2
+# For a clip too short to give enough frames at CLIP_SAMPLE_FPS, such as a ring of a second.
+SHORT_CLIP_SAMPLE_FPS = 10
 # Upper bound on sampled frames, so a long video can't fill the disk.
 CLIP_SAMPLE_MAX = 120
 
 
 def pick_evenly(count: int, wanted: int) -> list[int]:
-    """Return `wanted` indexes spread evenly over `count` items, first and last included.
+    """Return `wanted` indexes from the middles of `wanted` equal parts of `count` items.
 
-    With fewer items than wanted, every index is returned once.
+    A clip's first and last moments are often empty: before someone steps into view and
+    after they leave. With fewer items than wanted, every index is returned once.
     """
     if count <= 0 or wanted <= 0:
         return []
     if wanted >= count:
         return list(range(count))
-    if wanted == 1:
-        return [count // 2]
-    step = (count - 1) / (wanted - 1)
-    return sorted({round(i * step) for i in range(wanted)})
+    return [(2 * i + 1) * count // (2 * wanted) for i in range(wanted)]
 
 
 def _scale_filter() -> str:
@@ -66,10 +66,9 @@ async def _run_ffmpeg(binary: str, args: list[str], stdin: bytes | None = None) 
     return out
 
 
-async def frames_from_video(binary: str, video: bytes, wanted: int, workdir: Path) -> list[Path]:
-    """Sample a video and return `wanted` evenly spread JPEG frames written to `workdir`."""
-    source = workdir / "source.mp4"
-    await asyncio.get_running_loop().run_in_executor(None, source.write_bytes, video)
+async def _sample(binary: str, source: Path, fps: int, workdir: Path) -> list[Path]:
+    """Write `fps` frames per second of a clip to `workdir`, and return them in order."""
+    prefix = f"sample_{fps}fps"
     await _run_ffmpeg(
         binary,
         [
@@ -79,20 +78,37 @@ async def frames_from_video(binary: str, video: bytes, wanted: int, workdir: Pat
             "-i",
             str(source),
             "-vf",
-            f"fps={CLIP_SAMPLE_FPS},{_scale_filter()}",
+            f"fps={fps},{_scale_filter()}",
             "-frames:v",
             str(CLIP_SAMPLE_MAX),
             "-q:v",
             "3",
-            str(workdir / "sample_%03d.jpg"),
+            str(workdir / f"{prefix}_%03d.jpg"),
         ],
     )
-    samples = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: sorted(workdir.glob("sample_*.jpg"))
+    return await asyncio.get_running_loop().run_in_executor(
+        None, lambda: sorted(workdir.glob(f"{prefix}_*.jpg"))
     )
+
+
+async def frames_from_video(binary: str, video: bytes, wanted: int, workdir: Path) -> list[Path]:
+    """Sample a video and return `wanted` evenly spread JPEG frames written to `workdir`."""
+    source = workdir / "source.mp4"
+    await asyncio.get_running_loop().run_in_executor(None, source.write_bytes, video)
+    fps = CLIP_SAMPLE_FPS
+    samples = await _sample(binary, source, fps, workdir)
+    if len(samples) < wanted:
+        fps = SHORT_CLIP_SAMPLE_FPS
+        samples = await _sample(binary, source, fps, workdir)
     if not samples:
         raise HomeAssistantError("The video has no frames")
-    return [samples[i] for i in pick_evenly(len(samples), wanted)]
+    picked = pick_evenly(len(samples), wanted)
+    _LOGGER.debug(
+        "Clip of about %.1f s; sending its frames at %s s",
+        len(samples) / fps,
+        ", ".join(f"{i / fps:.1f}" for i in picked),
+    )
+    return [samples[i] for i in picked]
 
 
 async def frame_from_image(binary: str, image: bytes, workdir: Path, name: str) -> Path:

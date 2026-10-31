@@ -222,6 +222,13 @@ class Analyzer:
                 try:
                     async with asyncio.timeout(AI_TIMEOUT):
                         data = await self._ask(job, frames, workdir)
+                    _LOGGER.debug(
+                        "Answer for %s %s from %s frames: %s",
+                        job.camera_name,
+                        job.labels,
+                        len(frames),
+                        data,
+                    )
                     answer = parse_answer(data)
                 except TimeoutError:
                     _LOGGER.warning(
@@ -236,7 +243,7 @@ class Analyzer:
                 and not job.keep_without_activity
                 and not self.settings.keep_no_activity
             ):
-                _LOGGER.debug("Nothing to see at %s", job.camera_name)
+                _LOGGER.debug("No event for %s: the AI saw nothing", job.camera_name)
                 return None
             return await self._make_event(job, frames, answer)
         finally:
@@ -276,6 +283,8 @@ class Analyzer:
             except MediaNotReady:
                 if delay is None:
                     raise
+                # Never log a signature.
+                _LOGGER.debug("%s isn't ready; trying again in %s s", ref.split("?")[0], delay)
                 await asyncio.sleep(delay)
         raise MediaNotReady(ref)  # not reached
 
