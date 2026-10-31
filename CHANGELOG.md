@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A doorbell ring whose clip shows nobody no longer gets the AI's "no activity" title. Its
+  title is empty, so the card shows "The doorbell rang", and the description still says
+  what the clip showed.
+
 ## 0.1.1 - 2026-10-17
 
 - An icon. Home Assistant 2026.9 and newer show it for the integration, from
