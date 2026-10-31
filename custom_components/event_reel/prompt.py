@@ -52,12 +52,18 @@ STRUCTURE: dict[str, Any] = {
     },
 }
 
-TRIGGER_HINTS = {
-    "chime": "Someone pressed the doorbell.",
+DETECTOR_HINTS = {
     "person": "A detector reported a person.",
     "motion": "A detector reported motion.",
     "sound": "A detector reported a sound.",
 }
+# A pressed button isn't a detector that can be wrong, and someone at a doorbell stands
+# close to its camera.
+RING_HINT = (
+    "Someone pressed the doorbell, so a visitor is most likely there. A visitor can be so "
+    "close to the camera that they are only partly in view or a little blurred; they still "
+    "count."
+)
 
 
 def language_name(language: str) -> str:
@@ -79,10 +85,9 @@ def build_instructions(
 ) -> str:
     """The instructions for one analysis."""
     frames = "one frame" if frame_count == 1 else f"{frame_count} frames, in time order,"
-    hints = " ".join(TRIGGER_HINTS[label] for label in labels if label in TRIGGER_HINTS)
     lines = [
         f'You see {frames} from the camera "{camera_name}".',
-        *([hints + " The detector can be wrong."] if hints else []),
+        *_hints(labels),
         "Describe only what is actually visible. Don't guess.",
         "- description: 1 to 2 natural sentences (15 to 45 words) about the people, vehicles, "
         "animals or deliveries that are clearly visible: how many, visible clothes and colours, "
@@ -100,6 +105,14 @@ def build_instructions(
         *[text.strip() for text in extra if text and text.strip()],
     ]
     return "\n".join(lines)
+
+
+def _hints(labels: list[str]) -> list[str]:
+    """What started the analysis. A ring outweighs any detector."""
+    if "chime" in labels:
+        return [RING_HINT]
+    detected = " ".join(DETECTOR_HINTS[label] for label in labels if label in DETECTOR_HINTS)
+    return [f"{detected} The detector can be wrong."] if detected else []
 
 
 @dataclass(slots=True, frozen=True)

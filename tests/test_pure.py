@@ -10,9 +10,14 @@ TZ = timezone(timedelta(hours=2))
 
 
 def test_pick_evenly() -> None:
-    assert pick_evenly(10, 3) == [0, 4, 9]  # 4.5 rounds to 4 (banker's rounding)
-    assert pick_evenly(9, 3) == [0, 4, 8]
+    # The middles of three equal parts of 10 items are at 1.7, 5 and 8.3: items 1, 5 and 8,
+    # not the first and the last.
+    assert pick_evenly(10, 3) == [1, 5, 8]
+    assert pick_evenly(9, 3) == [1, 4, 7]  # middles at 1.5, 4.5 and 7.5
+    assert pick_evenly(20, 3) == [3, 10, 16]
     assert pick_evenly(5, 1) == [2]
+    # Too few to stay away from the ends.
+    assert pick_evenly(4, 3) == [0, 2, 3]
     assert pick_evenly(2, 4) == [0, 1]
     assert pick_evenly(0, 3) == []
     assert pick_evenly(4, 0) == []

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Frames from a clip come from the middle of equal parts of it, no longer from its first
+  and last moments, which are often empty. A clip of a second or so is sampled more
+  densely, so it still gives as many frames as the camera is set to.
+- At a doorbell ring, the AI is no longer told that the detector can be wrong. It is told
+  that a visitor is most likely there, perhaps so close to the camera that they are only
+  partly in view.
+- Debug logging shows how long each clip was, which moments of it the AI saw, and the
+  AI's answer. The README has a new section on what to do when the AI misses something.
+
 ## 0.1.1 - 2026-10-17
 
 - An icon. Home Assistant 2026.9 and newer show it for the integration, from

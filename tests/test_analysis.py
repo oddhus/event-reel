@@ -23,7 +23,7 @@ from custom_components.event_reel.analyzer import MediaNotReady
 from custom_components.event_reel.const import EVENT_EVENT_REEL
 from custom_components.event_reel.prompt import STRUCTURE
 
-from .conftest import FakeAI, SetUp, camera_subentry, wait_until
+from .conftest import FakeAI, FakeFFmpeg, SetUp, camera_subentry, wait_until
 
 CAMERA = "camera.entrance"
 TRIGGER = "binary_sensor.entrance_person"
@@ -203,9 +203,28 @@ async def test_nest_event_is_described_from_its_clip(
     assert event["camera"] == "camera.doorbell"
     assert event["source"] == "nest"
     assert event["start"].startswith("2026-10-08T")
-    # The fake video has 8 samples; 3 evenly spread are 1, 5 and 8, and the middle one is kept.
-    assert await _file(hass, event["key_frame"]) == b"frame 5"
-    assert len(fake_ai.calls[0]["attachments"]) == 3
+    # The fake clip lasts 4 s. The middles of its three equal parts are at 0.7, 2 and 3.3 s:
+    # the AI sees the half-second samples there, not the clip's first and last moments.
+    assert fake_ai.attachments[0] == [b"frame at 0.5 s", b"frame at 2.0 s", b"frame at 3.0 s"]
+    # The middle one is kept.
+    assert await _file(hass, event["key_frame"]) == b"frame at 2.0 s"
+
+
+async def test_a_one_second_clip_still_gives_three_frames(
+    hass: HomeAssistant, set_up: SetUp, fake_ai: FakeAI, fake_ffmpeg: FakeFFmpeg
+) -> None:
+    """Sampled every half second, a clip of one second would give only two frames."""
+    fake_ffmpeg.clip_seconds = 1.0
+    device_id = _nest_camera(hass)
+    with patch(
+        "custom_components.event_reel.analyzer.Analyzer._fetch", AsyncMock(return_value=b"mp4")
+    ):
+        entry = await set_up(cameras=[camera_subentry("camera.doorbell", frames=3)])
+        hass.bus.async_fire("nest_event", _nest_event(device_id, "doorbell_chime", "T1"))
+        await hass.async_block_till_done()
+        await _events(hass, entry)
+    # The middles of three equal parts of one second are at 0.17, 0.5 and 0.83 s.
+    assert fake_ai.attachments[0] == [b"frame at 0.1 s", b"frame at 0.5 s", b"frame at 0.8 s"]
 
 
 async def test_nest_events_of_other_devices_and_types_are_ignored(
