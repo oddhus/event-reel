@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-11-14
 
 - A trigger for a vehicle, an animal or a package is labelled `vehicle`, `animal` or
   `package`, no longer `motion`, and the AI is told what it looks for. It is read from the
