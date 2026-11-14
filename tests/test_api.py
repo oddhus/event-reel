@@ -127,6 +127,28 @@ async def test_an_added_image_is_never_deleted(
     assert entry.runtime_data.store.all() == []
 
 
+async def test_describe_takes_the_category_from_its_label_when_the_ai_names_no_subject(
+    hass: HomeAssistant, set_up: SetUp, fake_ai: FakeAI
+) -> None:
+    fake_ai.answer = {"activity": True, "subject": "other", "title": "T", "description": "D."}
+    await set_up()
+    with patch(
+        "custom_components.event_reel.frames.camera.async_get_image",
+        AsyncMock(return_value=Image("image/jpeg", b"img")),
+    ):
+        response = await hass.services.async_call(
+            DOMAIN,
+            "describe",
+            {"camera": "camera.garden", "frames": 1, "labels": ["vehicle"]},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert response["event"]["category"] == "vehicle"
+    assert response["event"]["labels"] == ["vehicle"]
+    assert "A detector reported a vehicle." in fake_ai.calls[0]["instructions"]
+
+
 async def test_describe_accepts_only_home_assistant_media(
     hass: HomeAssistant, set_up: SetUp
 ) -> None:

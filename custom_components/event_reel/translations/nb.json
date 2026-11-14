@@ -64,10 +64,10 @@
           },
           "data_description": {
             "name": "Navnet AI-en får. La stå tomt for å bruke kameraets navn.",
-            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. Trengs ikke for Nest-kameraer.",
+            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. En dørklokkes hendelsesentitet regnes som en ringing. Trengs ikke for Nest-kameraer.",
             "nest_events": "For Nest-kameraer: hvilke hendelser som skal beskrives.",
             "frames": "Hvor mange bilder AI-en ser: hentet fra klippet, eller stillbilder med ett sekunds mellomrom.",
-            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter.",
+            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter. Når AI-en ikke ser noe og ingen hendelse beholdes, venter kameraet høyst 10 sekunder etterpå.",
             "instructions": "Legges bare til i forespørsler for dette kameraet."
           }
         },
@@ -84,10 +84,10 @@
           },
           "data_description": {
             "name": "Navnet AI-en får. La stå tomt for å bruke kameraets navn.",
-            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. Trengs ikke for Nest-kameraer.",
+            "triggers": "Binærsensorer eller hendelsesentiteter som starter en beskrivelse, for eksempel en personsensor. En dørklokkes hendelsesentitet regnes som en ringing. Trengs ikke for Nest-kameraer.",
             "nest_events": "For Nest-kameraer: hvilke hendelser som skal beskrives.",
             "frames": "Hvor mange bilder AI-en ser: hentet fra klippet, eller stillbilder med ett sekunds mellomrom.",
-            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter.",
+            "cooldown": "Overse nye utløsere fra dette kameraet så lenge etter at én starter. Når AI-en ikke ser noe og ingen hendelse beholdes, venter kameraet høyst 10 sekunder etterpå.",
             "instructions": "Legges bare til i forespørsler for dette kameraet."
           }
         }
@@ -119,6 +119,24 @@
     },
     "unknown_event": {
       "message": "Det finnes ingen hendelse med id {id}."
+    }
+  },
+  "issues": {
+    "ai_failing": {
+      "title": "AI-oppgaven beskriver ikke kamerahendelser",
+      "description": "Event Reel ba {entity} beskrive en kamerahendelse de siste {count} gangene, og det mislyktes hver gang. Siste feil: {error}\n\nSlike hendelser får ingen beskrivelse. Sjekk at denne AI-oppgaven virker og tar imot bilder, eller velg en annen i innstillingene for Event Reel. Denne meldingen forsvinner når AI-en svarer igjen."
+    },
+    "ai_failing_preferred": {
+      "title": "AI-oppgaven beskriver ikke kamerahendelser",
+      "description": "Event Reel ba AI-oppgaven som er valgt som foretrukket under Innstillinger → AI-oppgave, beskrive en kamerahendelse de siste {count} gangene, og det mislyktes hver gang. Siste feil: {error}\n\nSlike hendelser får ingen beskrivelse. Sjekk at denne AI-oppgaven virker og tar imot bilder, eller velg en i innstillingene for Event Reel. Denne meldingen forsvinner når AI-en svarer igjen."
+    },
+    "ai_timeout": {
+      "title": "AI-oppgaven beskriver ikke kamerahendelser",
+      "description": "Event Reel ba {entity} beskrive en kamerahendelse de siste {count} gangene, og det mislyktes hver gang. Siste gang svarte den ikke innen {seconds} sekunder.\n\nSlike hendelser får ingen beskrivelse. Sjekk at denne AI-oppgaven virker og tar imot bilder, eller velg en raskere i innstillingene for Event Reel. Denne meldingen forsvinner når AI-en svarer igjen."
+    },
+    "ai_timeout_preferred": {
+      "title": "AI-oppgaven beskriver ikke kamerahendelser",
+      "description": "Event Reel ba AI-oppgaven som er valgt som foretrukket under Innstillinger → AI-oppgave, beskrive en kamerahendelse de siste {count} gangene, og det mislyktes hver gang. Siste gang svarte den ikke innen {seconds} sekunder.\n\nSlike hendelser får ingen beskrivelse. Sjekk at denne AI-oppgaven virker og tar imot bilder, eller velg en raskere i innstillingene for Event Reel. Denne meldingen forsvinner når AI-en svarer igjen."
     }
   },
   "services": {

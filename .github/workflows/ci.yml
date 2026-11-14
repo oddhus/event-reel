@@ -10,22 +10,39 @@ on:
     - cron: "23 6 * * 4"
   workflow_dispatch:
 
+# The jobs only read the repository.
+permissions:
+  contents: read
+
+# Actions are pinned to commits, with the version in a comment; Dependabot updates both
+# (.github/dependabot.yml).
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # A failure on one Home Assistant doesn't hide the result on the other.
+      fail-fast: false
       matrix:
-        # The oldest supported Home Assistant (hacs.json) and the newest tested one.
-        harness: ["0.13.367", "0.13.372"]
+        include:
+          # The oldest supported Home Assistant (hacs.json): keep it in step by hand.
+          - home-assistant: oldest
+            harness: pytest-homeassistant-custom-component==0.13.367
+          # The newest tested one, which Dependabot bumps when a new harness is out.
+          - home-assistant: newest tested
+            harness: -r .github/harness/requirements.txt
+    name: test (${{ matrix.home-assistant }})
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: uv venv --python 3.14
-      - run: uv pip install "pytest-homeassistant-custom-component==${{ matrix.harness }}" -r requirements_test.txt
+      - run: uv pip install ${{ matrix.harness }} -r requirements_test.txt
       - run: uv run --no-project python scripts/component_requirements.py > component_requirements.txt
       - run: uv pip install -r component_requirements.txt
       - run: uv run --no-project ruff check .
       - run: uv run --no-project ruff format --check .
+      - run: uv run --no-project mypy custom_components/event_reel
       - run: uv run --no-project pytest -q
 
   # The tests against the newest Home Assistant (the harness is not pinned), to catch changes
@@ -37,23 +54,33 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: uv venv --python 3.14
       - run: uv pip install pytest-homeassistant-custom-component -r requirements_test.txt
       - run: uv run --no-project python scripts/component_requirements.py > component_requirements.txt
       - run: uv pip install -r component_requirements.txt
+      - run: uv run --no-project mypy custom_components/event_reel
       - run: uv run --no-project pytest -q
 
   hassfest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # Published only on a branch: Dependabot moves the pin to the branch's newest commit.
+      # The action runs Home Assistant's latest hassfest image either way.
+      - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master
 
   hacs:
     runs-on: ubuntu-latest
     steps:
-      - uses: hacs/action@main
+      # Also pinned to a branch's commit, and it also runs the newest HACS image.
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main
         with:
           category: integration
+          # The job can't write to pull requests; the result is in the job's log.
+          comment: false

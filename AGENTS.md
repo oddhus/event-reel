@@ -22,7 +22,8 @@ Use only documented Home Assistant APIs: services (`ai_task.generate_data`), med
 Take validation schemas from `_schema.vol`, which is what HA's own helpers use (voluptuous
 before 2026.10, probatio from 2026.10).
 Keep `hacs.json` at the oldest Home Assistant whose APIs the integration uses, and the
-oldest harness in the CI matrix in step with it.
+oldest harness in the CI matrix (`.github/workflows/ci.yml`) in step with it. The newest
+tested harness is in `.github/harness/requirements.txt`, which Dependabot bumps.
 
 ## Strings
 
@@ -38,9 +39,10 @@ Fake only the edges: the AI service, ffmpeg, camera snapshots and HTTP.
 The test harness needs Linux (it imports `fcntl`); on Windows, run it in WSL. Install
 `pytest-homeassistant-custom-component` pinned to the Home Assistant version under test,
 `requirements_test.txt`, and `python scripts/component_requirements.py | xargs pip install`.
-Before review, run `ruff check .`, `ruff format --check .` and `pytest -q`. CI runs the
-same against the oldest supported and the newest tested Home Assistant, plus hassfest and
-the HACS check. A weekly job also tests against the newest Home Assistant release.
+Before review, run `ruff check .`, `ruff format --check .`,
+`mypy custom_components/event_reel` and `pytest -q`. CI runs the same against the oldest
+supported and the newest tested Home Assistant, plus hassfest and the HACS check. A weekly
+job also tests against the newest Home Assistant release.
 The repo has no JavaScript or TypeScript, so ruff is its linter; its rules are in
 `pyproject.toml`.
 
@@ -69,5 +71,6 @@ of any generic summary format.
 Releases are for the maintainer: set the version in
 `custom_components/event_reel/manifest.json` and `pyproject.toml`, move the `Unreleased`
 notes in CHANGELOG.md under that version, commit, then tag `vX.Y.Z` and push the tag. The
-release workflow checks that the tag matches the manifest and creates the GitHub release,
+release workflow checks that the tag matches the manifest, `pyproject.toml` and a
+`## X.Y.Z` heading in the changelog, and creates the GitHub release,
 where HACS finds it.

@@ -60,23 +60,48 @@ The card works without this integration. Install it when you want AI description
 |---|---|---|
 | Camera | | The camera entity. Events are tagged with it, so the card can show its clip. |
 | Name | the camera's name | The name the AI is told. |
-| Triggers | | Binary sensors or event entities that start a description. Not needed for Nest cameras. |
+| Triggers | | Binary sensors or event entities that start a description. A doorbell's event entity (device class `doorbell`, as from Ring or UniFi Protect) is a ring. Not needed for Nest cameras. |
 | Nest events | person, doorbell ring | For Nest cameras: which events to describe. |
 | Frames | 3 | How many frames the AI sees. |
-| Cooldown | 90 s | New triggers from the camera are ignored this long after one starts. |
+| Cooldown | 90 s | New triggers from the camera are ignored this long after one starts. When the AI finds nothing and no event is kept, it ends at most 10 s after that look. |
 | Extra instructions | | Added for this camera only. |
 
 How the frames are taken:
 
 - **Nest cameras** use frames spread over the clip of each Nest event, from the middle of
   equal parts of it: its first and last moments are often empty. Cameras that don't record
-  clips send the event's picture instead. A doorbell ring during the cooldown marks the
-  event as a ring; if the AI saw nobody at that event, the ring gets its own event.
+  clips send the event's picture instead.
 - **Other cameras** use snapshots one second apart, taken as soon as a trigger turns on,
   even while the AI is still busy with another camera.
 
-The AI describes one event at a time, so a local model is never asked twice at once. An
-answer that takes more than 3 minutes is given up on, and the event is kept without text.
+The AI is told what the trigger looks for, and the event is labelled with it: `person`,
+`vehicle`, `animal`, `package`, `sound` or `motion`. A sensor with the sound device class
+hears a sound. For others, it is read from the last word of the entity id or name, in
+English or (a few words) Norwegian, ignoring trailing words such as `occupancy`,
+`detected`, `alarm` or a number: `person` or `human`, a vehicle (`car`, `truck`,
+`vehicle`…), an animal (`dog`, `pet`, `deer`…), a `package`, a sound (`sound`,
+`car alarm`, `baby cry`…; not for a sensor that sees or smells, by its device class:
+motion, moving, occupancy, presence, smoke, gas or safety) or `motion` (`person_motion` is
+a person, but `person_all` is not). Any other last word names nothing, nor do Frigate's
+`teddy_bear` and `hot_dog`. So Frigate's
+`binary_sensor.drive_car_occupancy` looks for a vehicle, and
+`binary_sensor.bus_stop_motion` for motion. The entity id goes first; the name counts
+only when the id names nothing. When neither does, a person word (`person`, `people`,
+`human`…) anywhere in them means a person. Otherwise an occupancy or presence sensor looks
+for a person, and anything else for motion: Frigate's sensors for objects not in that
+list, such as `umbrella`, are taken for person sensors. When the AI doesn't name what it
+saw, the event's category is what the trigger looked for, or `motion` for a sound.
+
+A doorbell ring is always kept, even when the AI sees nobody, and its category is
+`doorbell`. A ring during the cooldown marks the camera's event as a ring; if that look
+made no event, the ring gets its own.
+
+The AI describes one event at a time, so a local model is never asked twice at once. When
+it fails with an error, such as a local model that is restarting, it is asked once more
+with the same frames 10 s later; other cameras wait meanwhile. A request the AI Task
+rejects, an error that took over a minute, an answer that takes more than 3 minutes and an
+unexpected error (a bug in the AI integration) aren't asked again, nor is anything while
+the repair below is up. When the AI gives no answer, the event is kept without text.
 
 Nest cameras that stream with WebRTC (most newer models) have no snapshots in Home
 Assistant, so triggers on them would only send a placeholder picture. Use their Nest
@@ -95,6 +120,31 @@ What can help:
 - **Keep events where the AI sees nothing**, so a missed visitor still leaves an event.
 - A larger vision model, if your hardware runs one.
 
+## When the AI doesn't answer
+
+When the AI Task answers with an error (also after it was asked again), or doesn't answer
+within three minutes, the event gets no description and `analysis: failed`. After three
+such events in a row, a repair under Settings → Repairs says so, with the AI Task (or that
+it's the preferred one) and the last error. An event that got no frames, say from a camera
+that is offline, isn't asked about and doesn't count either way. The repair goes away when
+the AI answers again, and when Event Reel is reloaded or removed or Home Assistant
+restarts; after that, it takes three new failures to raise it again. The AI Task list in
+Event Reel's options shows only the AI Tasks that accept pictures. The text of the error
+comes from the AI integration; Event Reel removes what looks like a password, key or token
+from it, but can't know every secret.
+
+## Reporting a problem
+
+Attach the diagnostics to the issue: Settings → Devices & services → Event Reel, open the
+menu (⋮) → **Download diagnostics**. They show the settings, the AI Task you picked and
+whether it takes pictures (only "preferred" when you picked none), and, while Event Reel
+runs, each camera's triggers and their states, how many analyses wait, which cameras are
+cooling down, how many AI answers failed in a row, which media directory is used, and counts of the stored events with when,
+where and how the ten newest were made. They leave out your extra instructions and what
+the cameras saw: no titles, descriptions or key frames, and a category or label of your
+own (from `add_event` or `describe`) shows as "(other)" unless it is one of Event Reel's
+own, such as `person`. They do show your entity ids and camera names.
+
 ## Services
 
 ### `event_reel.describe`
@@ -111,6 +161,10 @@ data:
   labels: [person]
 response_variable: described   # {"event": {...}} or {"event": null} when nothing was seen
 ```
+
+A `chime` label makes the category `doorbell`. Otherwise, when the AI doesn't name what it
+saw, the category is the first of `person`, `vehicle`, `animal` and `package` in `labels`,
+or `motion`.
 
 ### `event_reel.add_event`
 
@@ -236,6 +290,10 @@ actions:
 
 - `category`: `person`, `vehicle`, `animal`, `package`, `doorbell` or `motion`, or what
   `add_event` was given.
+- `labels`: what started the event. For Nest: `person`, `chime`, `motion` or `sound`. For
+  a trigger: `person`, `vehicle`, `animal`, `package`, `sound` or `motion`, or `chime` for a
+  doorbell's event entity. A ring during a look, or during the cooldown after it, adds
+  `chime`. For the services, what they were given.
 - `source`: `nest`, `trigger` or `service`. `trigger` is set to the trigger entity for
   trigger events.
 - `analysis`: `ok`, `failed` (the AI didn't answer; the event is kept without text) or

@@ -178,7 +178,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
             categories=call.data.get("categories"),
             limit=call.data["limit"],
         )
-        return {"events": events}
+        # A list of events is JSON, but list is invariant: list[dict] isn't list[JsonValueType].
+        return {"events": cast(list[Any], events)}
 
     hass.services.async_register(
         DOMAIN, SERVICE_DESCRIBE, describe, DESCRIBE_SCHEMA, SupportsResponse.OPTIONAL

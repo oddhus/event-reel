@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # The actions in .github/workflows, pinned to commits.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # The newest tested Home Assistant harness (CI's "newest tested" job).
+  - package-ecosystem: pip
+    directory: /.github/harness
+    schedule:
+      interval: weekly
+  # The test tools (ruff, mypy).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly

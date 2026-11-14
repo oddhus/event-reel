@@ -28,6 +28,13 @@ async def core(hass: HomeAssistant) -> None:
     assert await async_setup_component(hass, "homeassistant", {})
 
 
+@pytest.fixture(autouse=True)
+def no_retry_wait() -> Any:
+    """Ask a failed AI again at once instead of after 10 s."""
+    with patch("custom_components.event_reel.analyzer.AI_RETRY_DELAY", 0):
+        yield
+
+
 @pytest.fixture
 def media_dir(hass: HomeAssistant, tmp_path: Path) -> Path:
     path = tmp_path / "media"
@@ -47,6 +54,8 @@ class FakeAI:
             "title": "Person rings the bell",
             "description": "One person in a red jacket waits at the door.",
         }
+        # Answers for the next calls, in order, before `answer`.
+        self.answers: list[Any] = []
         self.attachment_files: list[list[Path]] = []
         # What each call's frames contained, read before they're cleaned up.
         self.attachments: list[list[bytes]] = []
@@ -69,9 +78,10 @@ class FakeAI:
             files.append(resolved.path)
         self.attachment_files.append(files)
         self.attachments.append([path.read_bytes() for path in files])
-        if isinstance(self.answer, Exception):
-            raise self.answer
-        return {"conversation_id": "test", "data": self.answer}
+        answer = self.answers.pop(0) if self.answers else self.answer
+        if isinstance(answer, Exception):
+            raise answer
+        return {"conversation_id": "test", "data": answer}
 
 
 @pytest.fixture

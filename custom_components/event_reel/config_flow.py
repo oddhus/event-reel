@@ -38,7 +38,16 @@ from .const import (
     SUBENTRY_CAMERA,
 )
 
-AI_TASK_SELECTOR = selector.EntitySelector(selector.EntitySelectorConfig(domain="ai_task"))
+# Only AI Tasks that accept pictures can describe frames. (The frontend lists an entity with
+# any of the features in a mask, so one filter can't also require GENERATE_DATA.)
+AI_TASK_SELECTOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(
+        filter=selector.EntityWithDeviceFilterSelectorConfig(
+            domain="ai_task",
+            supported_features=["ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS"],
+        )
+    )
+)
 TEXT = selector.TextSelector()
 MULTILINE = selector.TextSelector(selector.TextSelectorConfig(multiline=True))
 

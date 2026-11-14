@@ -40,8 +40,9 @@ integration and model, and debug logs with your own names replaced.
 
 You need Python 3.13 or newer, and Linux for the tests: the Home Assistant test harness
 imports `fcntl`, so on Windows run it in WSL. Install the harness for the Home Assistant
-version you test against, the test tools and the requirements of the integrations Event
-Reel depends on:
+version you test against (the newest one CI tests is pinned in
+`.github/harness/requirements.txt`), the test tools and the requirements of the
+integrations Event Reel depends on:
 
 ```bash
 pip install pytest-homeassistant-custom-component -r requirements_test.txt
@@ -117,7 +118,8 @@ agreed scope, this guide and [AGENTS.md](AGENTS.md). Say in the PR who reviewed 
 Explain how you established the problem and how you checked the change. Record the
 commands and manual checks you ran, the results and anything you could not check.
 
-- `ruff check .`, `ruff format --check .` and `pytest -q` pass. CI runs the same against
+- `ruff check .`, `ruff format --check .`, `mypy custom_components/event_reel` and
+  `pytest -q` pass. CI runs the same against
   the oldest supported and the newest tested Home Assistant.
 - Behavior changes include tests that follow [AGENTS.md](AGENTS.md#tests).
 - Changes to how events are described, to frames or to the services are also checked in
