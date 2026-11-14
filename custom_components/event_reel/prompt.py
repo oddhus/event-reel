@@ -54,6 +54,9 @@ STRUCTURE: dict[str, Any] = {
 
 DETECTOR_HINTS = {
     "person": "A detector reported a person.",
+    "vehicle": "A detector reported a vehicle.",
+    "animal": "A detector reported an animal.",
+    "package": "A detector reported a package.",
     "motion": "A detector reported motion.",
     "sound": "A detector reported a sound.",
 }
@@ -157,6 +160,8 @@ def category_for(answer: Answer | None, labels: list[str]) -> str:
         return "doorbell"
     if answer and answer.subject and answer.subject != "other":
         return answer.subject
-    if "person" in labels:
-        return "person"
+    # Without the AI's subject, what the detector looked for; a person first, as before.
+    for subject in SUBJECTS:
+        if subject in labels and subject != "other":
+            return subject
     return "motion"

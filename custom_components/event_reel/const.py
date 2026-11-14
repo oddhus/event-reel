@@ -45,6 +45,9 @@ FRAME_MAX_EDGE: Final = 1280
 QUEUE_SIZE: Final = 10
 # Seconds one AI answer may take, so a stuck model can't block every later event.
 AI_TIMEOUT: Final = 180
+# After this many failed answers in a row, a repair issue says so; the next answer removes it.
+AI_FAILURES_FOR_ISSUE: Final = 3
+ISSUE_AI_FAILING: Final = "ai_failing"
 # Largest clip or image fetched for an analysis.
 MAX_MEDIA_BYTES: Final = 100 * 1024 * 1024
 

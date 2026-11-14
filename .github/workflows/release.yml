@@ -5,16 +5,39 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      # To create the release.
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Tag matches the manifest version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The tag, the manifest, pyproject.toml and the changelog agree
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          test "v$(jq -r .version custom_components/event_reel/manifest.json)" = "${GITHUB_REF_NAME}"
-      - uses: softprops/action-gh-release@v2
+          version="${TAG#v}"
+          ok=true
+          manifest="$(jq -r .version custom_components/event_reel/manifest.json)"
+          if [ "$manifest" != "$version" ]; then
+            echo "::error file=custom_components/event_reel/manifest.json::version is $manifest, the tag is $TAG"
+            ok=false
+          fi
+          if ! grep -qxF "version = \"$version\"" pyproject.toml; then
+            echo "::error file=pyproject.toml::version is not $version"
+            ok=false
+          fi
+          # A heading such as "## 0.1.2 - 2026-11-20".
+          if ! grep -qE "^## ${version//./\\.}( |$)" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::no section for $version"
+            ok=false
+          fi
+          $ok
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           generate_release_notes: true

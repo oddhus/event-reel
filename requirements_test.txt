@@ -2,3 +2,4 @@
 # installs the requirements of the integrations Event Reel depends on with
 # scripts/component_requirements.py.
 ruff==0.16.9
+mypy==2.4.1

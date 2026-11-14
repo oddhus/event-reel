@@ -64,10 +64,10 @@
           },
           "data_description": {
             "name": "The name the AI is told. Leave empty to use the camera's name.",
-            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. Not needed for Nest cameras.",
+            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. A doorbell's event entity counts as a ring. Not needed for Nest cameras.",
             "nest_events": "For Nest cameras: which events to describe.",
             "frames": "How many frames the AI sees: taken from the clip, or snapshots one second apart.",
-            "cooldown": "Ignore new triggers from this camera for this long after one starts.",
+            "cooldown": "Ignore new triggers from this camera for this long after one starts. When the AI finds nothing and no event is kept, the camera waits at most 10 seconds after that look.",
             "instructions": "Added to requests for this camera only."
           }
         },
@@ -84,10 +84,10 @@
           },
           "data_description": {
             "name": "The name the AI is told. Leave empty to use the camera's name.",
-            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. Not needed for Nest cameras.",
+            "triggers": "Binary sensors or event entities that start a description, for example a person sensor. A doorbell's event entity counts as a ring. Not needed for Nest cameras.",
             "nest_events": "For Nest cameras: which events to describe.",
             "frames": "How many frames the AI sees: taken from the clip, or snapshots one second apart.",
-            "cooldown": "Ignore new triggers from this camera for this long after one starts.",
+            "cooldown": "Ignore new triggers from this camera for this long after one starts. When the AI finds nothing and no event is kept, the camera waits at most 10 seconds after that look.",
             "instructions": "Added to requests for this camera only."
           }
         }
@@ -119,6 +119,24 @@
     },
     "unknown_event": {
       "message": "There is no event with id {id}."
+    }
+  },
+  "issues": {
+    "ai_failing": {
+      "title": "The AI Task doesn't describe camera events",
+      "description": "Event Reel asked {entity} to describe a camera event the last {count} times, and it failed each time. The last error: {error}\n\nSuch events get no description. Check that this AI Task works and accepts pictures, or choose another one in Event Reel's options. This message goes away when the AI answers again."
+    },
+    "ai_failing_preferred": {
+      "title": "The AI Task doesn't describe camera events",
+      "description": "Event Reel asked the AI Task set as preferred under Settings → AI Task to describe a camera event the last {count} times, and it failed each time. The last error: {error}\n\nSuch events get no description. Check that this AI Task works and accepts pictures, or choose one in Event Reel's options. This message goes away when the AI answers again."
+    },
+    "ai_timeout": {
+      "title": "The AI Task doesn't describe camera events",
+      "description": "Event Reel asked {entity} to describe a camera event the last {count} times, and it failed each time. The last time, it didn't answer within {seconds} seconds.\n\nSuch events get no description. Check that this AI Task works and accepts pictures, or choose a faster one in Event Reel's options. This message goes away when the AI answers again."
+    },
+    "ai_timeout_preferred": {
+      "title": "The AI Task doesn't describe camera events",
+      "description": "Event Reel asked the AI Task set as preferred under Settings → AI Task to describe a camera event the last {count} times, and it failed each time. The last time, it didn't answer within {seconds} seconds.\n\nSuch events get no description. Check that this AI Task works and accepts pictures, or choose a faster one in Event Reel's options. This message goes away when the AI answers again."
     }
   },
   "services": {

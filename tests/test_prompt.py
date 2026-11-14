@@ -88,6 +88,30 @@ def test_category_rules() -> None:
     assert category_for(other, ["motion"]) == "motion"
     assert category_for(None, ["person"]) == "person"
     assert category_for(None, []) == "motion"
+    # Without the AI's subject, what the detector looked for.
+    assert category_for(None, ["vehicle"]) == "vehicle"
+    assert category_for(other, ["animal"]) == "animal"
+    assert category_for(None, ["package"]) == "package"
+    assert category_for(None, ["sound"]) == "motion"
+    # A person goes first, as it always did.
+    assert category_for(None, ["package", "person"]) == "person"
+    # The AI's subject goes before what the detector looked for, and a ring before both.
+    vehicle = Answer(activity=True, subject="vehicle", title="t", description=None)
+    assert category_for(vehicle, ["person"]) == "vehicle"
+    assert category_for(vehicle, ["package", "chime"]) == "doorbell"
+
+
+def test_each_detector_has_its_hint() -> None:
+    for label, hint in (
+        ("vehicle", "A detector reported a vehicle."),
+        ("animal", "A detector reported an animal."),
+        ("package", "A detector reported a package."),
+    ):
+        text = build_instructions(
+            camera_name="Drive", frame_count=3, language="en", labels=[label], extra=[]
+        )
+        assert f"{hint} The detector can be wrong." in text
+        assert text.count("A detector reported") == 1
 
 
 def test_structure_asks_for_the_verdict_last() -> None:

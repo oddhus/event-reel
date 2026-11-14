@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import ipaddress
 import logging
 from pathlib import Path
+import re
 import shutil
 import time
 from typing import Any
@@ -19,15 +20,19 @@ from homeassistant.components import media_source
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    AI_FAILURES_FOR_ISSUE,
     AI_TIMEOUT,
     ANALYSIS_FAILED,
     ANALYSIS_NONE,
     ANALYSIS_OK,
+    DOMAIN,
+    ISSUE_AI_FAILING,
     MAX_MEDIA_BYTES,
     QUEUE_SIZE,
 )
@@ -40,8 +45,99 @@ _LOGGER = logging.getLogger(__name__)
 # Waits before fetching a Nest clip again: the clip can arrive a little after the event.
 MEDIA_RETRY_DELAYS = (3, 6, 12)
 FETCH_TIMEOUT = ClientTimeout(total=60)
+# Seconds a camera's cooldown lasts at most after a look that found nothing and kept no
+# event ends.
+EMPTY_LOOK_COOLDOWN = 10
+# Times the AI is asked when it fails with an error, and the wait between them.
+AI_ATTEMPTS = 2
+AI_RETRY_DELAY = 10
+# Seconds within which an error must come for the AI to be asked again. A model that takes
+# longer to fail would hold up every camera twice.
+AI_RETRY_WITHIN = 60
 # What getting frames can fail with; the event is then kept without a description.
 FRAME_ERRORS = (HomeAssistantError, ClientError, TimeoutError, OSError)
+# Longest AI error shown in Repairs.
+MAX_ERROR_LENGTH = 200
+# How much of an error is searched for secrets; the rest is cut anyway. The searches take
+# time that grows with the square of the length, on the event loop.
+_MAX_SCANNED = 1000
+# A value in quotes, to its closing quote (one escaped with `\` doesn't close it) or, cut
+# short, to the end. Its quotes are kept around the mask.
+_QUOTED = r"(\")(?:[^\"\\]|\\.)*(?:\"|$)|(')(?:[^'\\]|\\.)*(?:'|$)"
+# Names whose value is a secret. A name is a whole word or the end of one joined with `-`
+# or `_` (`x-api-key`, `client_secret`), which also takes words like `monkey`, the safe side.
+_SECRET_NAMES = (
+    r"key(?:\s+provided)?|token|secret|pass(?:word|wd|phrase)?|pwd|cookie|sig(?:nature)?"
+    r"|credentials?|auth|session_?id"
+)
+# What may carry a secret in an error message, and what it is replaced with.
+_SECRETS = (
+    # A URL's user and password, up to the last `@` before the path, query or fragment.
+    (re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s?#\"'<>]*@", re.IGNORECASE), r"\1"),
+    # The query and fragment of a URL or path, as far as quotes or space; brackets and
+    # punctuation right before those are kept. A `?` with nothing after it ends a question.
+    (
+        re.compile(
+            r"((?:\b[a-z][a-z0-9+.-]*://|/)[^\s?#\"'<>]*)[?#][^\s\"'<>]+?"
+            r"(?=[)\]}.,;:!]*(?:[\s\"'<>]|$))",
+            re.IGNORECASE,
+        ),
+        r"\1",
+    ),
+    # An `Authorization` header's value, whatever its scheme: the quoted value, or all the
+    # rest of the text (Digest's goes on with commas).
+    (
+        re.compile(
+            r"(?<![\w-])((?:[\w-]*-)?authorization)([\"']?\s*[=:]\s*)(?:" + _QUOTED + r"|.*)",
+            re.IGNORECASE,
+        ),
+        lambda m: f"{m[1]}{m[2]}{m[3] or m[4] or ''}***{m[3] or m[4] or ''}",
+    ),
+    # `api_key=…`, `token: …`, `password="…"` and the like.
+    (
+        re.compile(
+            rf"(?<![\w-])([\w-]*(?:{_SECRET_NAMES}))([\"']?\s*[=:]\s*)"
+            r"(?:(?:bearer|basic|token)\s+)?(?:" + _QUOTED + r"|[^\s\"'&,;]+)",
+            re.IGNORECASE,
+        ),
+        lambda m: f"{m[1]}{m[2]}{m[3] or m[4] or ''}***{m[3] or m[4] or ''}",
+    ),
+    # A bearer token on its own: one with a digit or token punctuation, not a word.
+    (
+        re.compile(r"\b(bearer)\s+(?=[\w.~+/=-]*[\d.~+/=_-])[\w.~+/=-]{6,}", re.IGNORECASE),
+        r"\1 ***",
+    ),
+    # Keys and tokens by their shape: OpenAI's and many others', Google's, GitHub's, Hugging
+    # Face's, Groq's, xAI's, NVIDIA's, Perplexity's, and JSON web tokens.
+    (re.compile(r"\bsk-[\w-]{8,}"), "sk-***"),
+    (
+        re.compile(r"\b(AIza|ya29\.|gh[pousr]_|github_pat_|hf_|gsk_|xai-|nvapi-|pplx-)[\w.-]{16,}"),
+        r"\1***",
+    ),
+    (re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+"), "eyJ***"),
+)
+_MARKDOWN = re.compile(r"([\\`*_\[\]<>~|])")
+# A bare address GitHub-flavored markdown would make a link of.
+_WWW = re.compile(r"\b(www)\.", re.IGNORECASE)
+
+
+def safe_error(text: str) -> str:
+    """An error message fit for a Repairs text: one short line, no secrets, no markdown.
+
+    The text comes from the AI integration, so this is a best effort: a secret it doesn't
+    mark as one, such as a token in a URL path, still shows.
+    """
+    # One line without control characters, short enough to search.
+    text = "".join(c for c in text[: _MAX_SCANNED * 4] if c.isprintable() or c.isspace())
+    text = " ".join(text.split())[:_MAX_SCANNED]
+    for pattern, replacement in _SECRETS:
+        text = pattern.sub(replacement, text)
+    if len(text) > MAX_ERROR_LENGTH:
+        text = text[: MAX_ERROR_LENGTH - 1].rstrip() + "…"
+    # Markdown shows as written, and an address isn't made a link (`://` and `www.` are no
+    # longer one).
+    text = _MARKDOWN.sub(r"\\\1", text)
+    return _WWW.sub(r"\1\\.", text.replace("://", "\\://"))
 
 
 class MediaNotReady(HomeAssistantError):
@@ -72,6 +168,7 @@ class Job:
     # Snapshots are taken when the job is submitted, not when the worker gets to it.
     workdir: Path | None = None
     capture: asyncio.Task[list[Path]] | None = None
+    # Its outcome is decided: a ring that comes now can no longer join it.
     finished: bool = False
 
 
@@ -95,9 +192,12 @@ class Analyzer:
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._worker: asyncio.Task[None] | None = None
         self._cooldown_until: dict[str, float] = {}
-        # Per camera: the job of the current cooldown until it makes an event, then that event.
+        # Per camera: the job of the current cooldown until it makes an event, then that
+        # event's id and whether the AI saw nothing at it.
         self._recent_job: dict[str, Job] = {}
-        self._recent_event: dict[str, str] = {}
+        self._recent_event: dict[str, tuple[str, bool]] = {}
+        # Failed answers in a row.
+        self._ai_failures = 0
 
     @callback
     def async_start(self) -> None:
@@ -108,10 +208,23 @@ class Analyzer:
             self._worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._worker
+        # A reload may well be the fix, such as another AI Task; the count starts over. After
+        # the worker, so a last failure while it stops can't raise the issue again.
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_AI_FAILING)
+        waiting: list[Job] = []
         while not self._queue.empty():
             job = self._queue.get_nowait()
+            self._queue.task_done()
             _discard(job.capture)
             _fail(job, HomeAssistantError("Event Reel stopped before the analysis ran"))
+            waiting.append(job)
+        # Their snapshots may already be on disk: let the captures stop, then remove them.
+        await asyncio.gather(
+            *(job.capture for job in waiting if job.capture), return_exceptions=True
+        )
+        for job in waiting:
+            if job.workdir:
+                await self.hass.async_add_executor_job(shutil.rmtree, job.workdir, True)
 
     @callback
     def async_submit(self, job: Job, cooldown: float = 0) -> bool:
@@ -123,7 +236,7 @@ class Analyzer:
         key = job.camera
         if key and cooldown and self._cooldown_until.get(key, 0) > now:
             if "chime" in job.labels:
-                self._add_chime(job)
+                self._add_chime(job, cooldown)
             else:
                 _LOGGER.debug("Skipping %s: cooling down", key)
             return False
@@ -149,6 +262,25 @@ class Analyzer:
             )
         return True
 
+    @property
+    def ai_failures(self) -> int:
+        """How many jobs in a row the AI gave no answer for."""
+        return self._ai_failures
+
+    @property
+    def waiting(self) -> int:
+        """How many jobs wait for the AI."""
+        return self._queue.qsize()
+
+    def cooldowns(self) -> dict[str, float]:
+        """Seconds left of each camera's cooldown, for the cameras cooling down."""
+        now = time.monotonic()
+        return {
+            camera: round(until - now, 1)
+            for camera, until in self._cooldown_until.items()
+            if until > now
+        }
+
     async def async_join(self) -> None:
         """Wait until every queued job has finished."""
         await self._queue.join()
@@ -161,7 +293,7 @@ class Analyzer:
         return await job.result
 
     @callback
-    def _add_chime(self, chime: Job) -> None:
+    def _add_chime(self, chime: Job, cooldown: float) -> None:
         camera = chime.camera
         assert camera
         job = self._recent_job.get(camera)
@@ -171,18 +303,26 @@ class Analyzer:
                 job.labels.append("chime")
             job.keep_without_activity = True
             return
-        event_id = self._recent_event.get(camera)
-        if event_id is not None:
+        recent = self._recent_event.get(camera)
+        if recent is not None:
+            event_id, nothing_seen = recent
             event = self.store.get(event_id)
             if event is not None and "chime" not in event["labels"]:
-                self.store.async_update(
-                    event_id, {"labels": [*event["labels"], "chime"], "category": "doorbell"}
-                )
+                changes: dict[str, Any] = {
+                    "labels": [*event["labels"], "chime"],
+                    "category": "doorbell",
+                }
+                if nothing_seen:
+                    # As at any ring the AI saw nobody at, the ring is the event (_make_event).
+                    changes["title"] = ""
+                self.store.async_update(event_id, changes)
             return
-        # The moment was described without making an event (nobody seen, or it failed):
-        # the ring is still worth its own event.
+        # The moment's look ended without an event: it crashed, or it found nothing and this is
+        # the short cooldown after it (_end_cooldown). The ring is still worth its own event,
+        # and the visit it starts gets a whole cooldown, as any new look does.
         if self._enqueue(chime):
             self._recent_job[camera] = chime
+            self._cooldown_until[camera] = time.monotonic() + cooldown
 
     async def _run(self) -> None:
         while True:
@@ -217,25 +357,7 @@ class Analyzer:
             except FRAME_ERRORS as err:
                 _LOGGER.warning("No frames for %s: %s", job.camera_name, err)
 
-            answer: Answer | None = None
-            if frames:
-                try:
-                    async with asyncio.timeout(AI_TIMEOUT):
-                        data = await self._ask(job, frames, workdir)
-                    _LOGGER.debug(
-                        "Answer for %s %s from %s frames: %s",
-                        job.camera_name,
-                        job.labels,
-                        len(frames),
-                        data,
-                    )
-                    answer = parse_answer(data)
-                except TimeoutError:
-                    _LOGGER.warning(
-                        "The AI took more than %s s to describe %s", AI_TIMEOUT, job.camera_name
-                    )
-                except HomeAssistantError as err:
-                    _LOGGER.warning("The AI couldn't describe %s: %s", job.camera_name, err)
+            answer = await self._describe(job, frames, workdir) if frames else None
 
             if (
                 answer is not None
@@ -244,11 +366,137 @@ class Analyzer:
                 and not self.settings.keep_no_activity
             ):
                 _LOGGER.debug("No event for %s: the AI saw nothing", job.camera_name)
+                self._end_cooldown(job)
                 return None
             return await self._make_event(job, frames, answer)
         finally:
+            # Whatever happened, a ring during the cleanup must not join this job.
+            job.finished = True
             _discard(job.capture)
             await self.hass.async_add_executor_job(shutil.rmtree, workdir, True)
+
+    @callback
+    def _end_cooldown(self, job: Job) -> None:
+        """Shorten the cooldown after a look that found nothing and kept no event.
+
+        Otherwise a false alarm would hide whoever arrives a few seconds later for the rest
+        of the cooldown. The camera still waits up to EMPTY_LOOK_COOLDOWN after the look,
+        so a trigger that keeps flapping leaves a local model idle in between. A shorter
+        configured cooldown is never lengthened.
+        """
+        camera = job.camera
+        if camera and self._recent_job.get(camera) is job:
+            del self._recent_job[camera]
+            now = time.monotonic()
+            until = min(self._cooldown_until.get(camera, 0), now + EMPTY_LOOK_COOLDOWN)
+            if until > now:
+                self._cooldown_until[camera] = until
+            else:
+                self._cooldown_until.pop(camera, None)
+
+    async def _describe(self, job: Job, frames: list[Path], workdir: Path) -> Answer | None:
+        """The AI's answer, asking once more after an error. None when it gave none.
+
+        An error is often passing: a local model that is restarting or still loading. A
+        request the AI Task rejects (ServiceValidationError, which includes a missing
+        service) or a timeout isn't asked again: the same request would be rejected again,
+        and a stuck model would hold up every camera twice. Nor is an error that took long
+        to come, for the same reason, or an AI integration's own bug. A job counts once
+        towards the Repairs issue, however often it was asked; an answer clears the issue.
+        """
+        for attempt in range(1, AI_ATTEMPTS + 1):
+            started = time.monotonic()
+            try:
+                async with asyncio.timeout(AI_TIMEOUT) as deadline:
+                    data = await self._ask(job, frames, workdir)
+                _LOGGER.debug(
+                    "Answer for %s %s from %s frames: %s",
+                    job.camera_name,
+                    job.labels,
+                    len(frames),
+                    data,
+                )
+                answer = parse_answer(data)
+            except TimeoutError as err:
+                if deadline.expired():
+                    _LOGGER.warning(
+                        "The AI took more than %s s to describe %s", AI_TIMEOUT, job.camera_name
+                    )
+                    self._ai_failed(None)
+                    return None
+                # The AI integration's own time limit, such as an HTTP timeout: an error
+                # like any other.
+                error = str(err) or type(err).__name__
+            except ServiceValidationError as err:
+                _LOGGER.warning(
+                    "The AI Task rejected the request to describe %s: %s", job.camera_name, err
+                )
+                self._ai_failed(str(err) or type(err).__name__)
+                return None
+            except HomeAssistantError as err:
+                error = str(err) or type(err).__name__
+            except Exception as err:  # an AI integration's own bug is a failed answer too
+                _LOGGER.exception("The AI couldn't describe %s", job.camera_name)
+                self._ai_failed(f"{type(err).__name__}: {err}" if str(err) else type(err).__name__)
+                return None
+            else:
+                self._ai_failures = 0
+                ir.async_delete_issue(self.hass, DOMAIN, ISSUE_AI_FAILING)
+                return answer
+            took = time.monotonic() - started
+            # Once the repair is up, the AI Task is broken rather than busy: asking twice
+            # would only hold up the other cameras.
+            if (
+                attempt == AI_ATTEMPTS
+                or took > AI_RETRY_WITHIN
+                or self._ai_failures >= AI_FAILURES_FOR_ISSUE
+            ):
+                _LOGGER.warning(
+                    "The AI couldn't describe %s (try %s, after %.0f s): %s",
+                    job.camera_name,
+                    attempt,
+                    took,
+                    error,
+                )
+                self._ai_failed(error)
+                return None
+            _LOGGER.info(
+                "The AI couldn't describe %s (%s); asking again in %s s",
+                job.camera_name,
+                error,
+                AI_RETRY_DELAY,
+            )
+            await asyncio.sleep(AI_RETRY_DELAY)
+        return None  # not reached
+
+    @callback
+    def _ai_failed(self, error: str | None) -> None:
+        """Count a failed answer, and say so in Repairs once they keep failing.
+
+        `error` is None when the AI didn't answer in time.
+        """
+        self._ai_failures += 1
+        if self._ai_failures < AI_FAILURES_FOR_ISSUE:
+            return
+        entity = self.settings.ai_task_entity
+        placeholders = {"count": str(self._ai_failures)}
+        if entity:
+            placeholders["entity"] = entity
+        if error is None:
+            key = "ai_timeout"
+            placeholders["seconds"] = str(AI_TIMEOUT)
+        else:
+            key = ISSUE_AI_FAILING
+            placeholders["error"] = safe_error(error)
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_AI_FAILING,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=key if entity else f"{key}_preferred",
+            translation_placeholders=placeholders,
+        )
 
     async def _capture(self, job: Job, workdir: Path) -> list[Path]:
         assert job.camera
@@ -372,7 +620,8 @@ class Analyzer:
         # For a ring the AI saw nobody at, the ring is the event: an empty title lets the card
         # and automations say "the doorbell rang" instead of the AI's "no activity" title.
         # The description still says what the clip showed.
-        quiet_ring = answer is not None and answer.activity is False and "chime" in job.labels
+        nothing_seen = answer is not None and answer.activity is False
+        quiet_ring = nothing_seen and "chime" in job.labels
         event: ReelEvent = {
             "id": event_id,
             "start": dt_util.as_local(job.start).isoformat(),
@@ -395,7 +644,7 @@ class Analyzer:
             # A later ring in this cooldown marks this event, unless a newer job owns it.
             if job.camera and self._recent_job.get(job.camera) is job:
                 del self._recent_job[job.camera]
-                self._recent_event[job.camera] = event_id
+                self._recent_event[job.camera] = (event_id, nothing_seen)
         return event
 
     @staticmethod
